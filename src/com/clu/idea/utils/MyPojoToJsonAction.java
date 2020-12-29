@@ -9,14 +9,17 @@ import com.intellij.notification.NotificationDisplayType;
 import com.intellij.notification.NotificationGroup;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications.Bus;
-import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
-import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
@@ -119,13 +122,16 @@ public class MyPojoToJsonAction extends AnAction {
         }
 
         // new
-        PsiNewExpression selectedNewExpression = PsiTreeUtil.getContextOfType(element, PsiNewExpression.class);
-        if (selectedNewExpression != null) {
-            PsiType selectType = selectedNewExpression.getType();
-            if (selectType instanceof PsiClassType) {
-                classInfo = new MyGenericInfo((PsiClassType) selectType);
+        if (classInfo == null) {
+            PsiNewExpression selectedNewExpression = PsiTreeUtil.getContextOfType(element, PsiNewExpression.class);
+            if (selectedNewExpression != null) {
+                PsiType selectType = selectedNewExpression.getType();
+                if (selectType instanceof PsiClassType) {
+                    classInfo = new MyGenericInfo((PsiClassType) selectType);
+                }
             }
         }
+
 
         // 类声明
         if (classInfo == null) {
@@ -213,9 +219,11 @@ public class MyPojoToJsonAction extends AnAction {
 
     private static Object typeResolve(PsiType psiType, @Nullable MyGenericInfo myGenericInfo, int level) {
         ++level;
-        if (psiType instanceof PsiPrimitiveType) {
-            return getDefaultValue(psiType);
-        } else if (psiType instanceof PsiArrayType) {
+        Object primitiveTypeDefaultValue = getDefaultValue(psiType);
+        if (primitiveTypeDefaultValue != null) {
+            return primitiveTypeDefaultValue;
+        }
+        if (psiType instanceof PsiArrayType) {
             List<Object> list = new ArrayList<>();
             PsiType deepType = psiType.getDeepComponentType();
             MyGenericInfo myGenericInfo2 = new MyGenericInfo((PsiClassType) deepType);
@@ -267,65 +275,51 @@ public class MyPojoToJsonAction extends AnAction {
         }
     }
 
+    private static Object getDefaultValue(PsiType psiType) {
+        if (psiType instanceof PsiPrimitiveType) {
+            return getDefaultValue(psiType.getCanonicalText());
+        }
+        if (psiType instanceof PsiClassType) {
+            PsiClass psiClass = ((PsiClassType) psiType).resolve();
+
+            if (psiClass != null) {
+                String qualifiedName = psiClass.getQualifiedName();
+                String prefix = "java.lang.";
+                if (qualifiedName != null && qualifiedName.startsWith(prefix)) {
+                    return getDefaultValue(qualifiedName.substring(prefix.length()));
+                }
+            }
+        }
+        return null;
+    }
+
     /**
      * 获取类型的默认值
-     * @param type
+     * @param typeName
      * @return
      */
-    private static Object getDefaultValue(PsiType type) {
-        if (!(type instanceof PsiPrimitiveType)) {
-            return null;
-        } else {
-            String text = type.getCanonicalText();
-            byte value = -1;
-            switch (text) {
-                case "boolean":
-                    value = 0;
-                    break;
-                case "byte":
-                    value = 1;
-                    break;
-                case "char":
-                    value = 2;
-                    break;
-                case "short":
-                    value = 3;
-                    break;
-                case "int":
-                    value = 4;
-                    break;
-                case "long":
-                    value = 5;
-                    break;
-                case "float":
-                    value = 6;
-                    break;
-                case "double":
-                    value = 7;
-                    break;
-
-            }
-
-            switch (value) {
-                case 0:
-                    return false;
-                case 1:
-                    return 0;
-                case 2:
-                    return '\u0000';
-                case 3:
-                    return (short) 0;
-                case 4:
-                    return 0;
-                case 5:
-                    return 0L;
-                case 6:
-                    return zero;
-                case 7:
-                    return zero;
-                default:
-                    return null;
-            }
+    private static Object getDefaultValue(@NotNull String typeName) {
+        typeName = typeName.toLowerCase();
+        switch (typeName) {
+            case "boolean":
+                return false;
+            case "byte":
+                return (byte) 0;
+            case "character": // 兼容包装类型
+            case "char":
+                return '\0';
+            case "short":
+                return (short) 0;
+            case "int":
+                return 0;
+            case "long":
+                return 0L;
+            case "float":
+                return zero;
+            case "double":
+                return zero;
+            default:
+                return null;
         }
     }
 
