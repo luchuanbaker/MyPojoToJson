@@ -7,7 +7,6 @@ import com.intellij.psi.PsiTypeParameter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.annotation.Nonnull;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -15,76 +14,33 @@ import java.util.concurrent.ConcurrentMap;
 
 class MyGenericInfo {
 
-    private ConcurrentMap<PsiClass, Map<String, PsiType>> genericInfoMap = new ConcurrentHashMap<>();
+    private ConcurrentMap<String, PsiType> genericInfoMap = new ConcurrentHashMap<>();
 
     private PsiClass psiClass;
 
     private PsiClassType psiClassType;
 
-    MyGenericInfo(@NotNull PsiClass psiClass, @Nullable MyGenericInfo prevGenericInfo) {
-        this.psiClass = psiClass;
-        parseSuperTypes(this.psiClass, prevGenericInfo);
-        mergeMapping(prevGenericInfo);
+    private PsiType psiType;
+
+    MyGenericInfo(@NotNull PsiType psiType) {
+        this.psiType = psiType;
     }
 
-    MyGenericInfo(@NotNull PsiClassType psiClassType, @Nullable MyGenericInfo prevGenericInfo) {
+    MyGenericInfo(@NotNull PsiClassType psiClassType) {
         this.psiClassType = psiClassType;
         // 引用模板类时的实际参数
         this.psiClass = psiClassType.resolve();
         parseGenerics(this.psiClassType, this.psiClass);
-
-        if (this.psiClassType != null) {
-            parseSuperTypes(this.psiClassType, prevGenericInfo);
-        }
-        mergeMapping(prevGenericInfo);
-    }
-
-    private void mergeMapping(@Nullable MyGenericInfo prevGenericInfo) {
-        if (prevGenericInfo != null) {
-            for (Map.Entry<PsiClass, Map<String, PsiType>> entry : prevGenericInfo.genericInfoMap.entrySet()) {
-                // 不能覆盖本次递归时类的泛型映射信息
-                if (!this.genericInfoMap.containsKey(entry.getKey())) {
-                    this.genericInfoMap.put(entry.getKey(), entry.getValue());
-                }
-            }
-        }
     }
 
     private void parseGenerics(@NotNull PsiClassType thisPsiClassType, PsiClass thisPsiClass) {
         Map<String, PsiType> mapping = getMapping(thisPsiClassType, thisPsiClass);
         if (mapping != null) {
-            this.genericInfoMap.put(this.psiClass, mapping);
+            this.genericInfoMap.putAll(mapping);
         }
     }
 
-    private void parseSuperTypes(@Nonnull PsiClass psiClass, @Nullable MyGenericInfo prevGenericInfo) {
-        this.doParseSuperTypes(psiClass.getSuperTypes(), prevGenericInfo);
-    }
-
-    private void parseSuperTypes(@Nonnull PsiClassType psiClassType, @Nullable MyGenericInfo prevGenericInfo) {
-        this.doParseSuperTypes(psiClassType.getSuperTypes(), prevGenericInfo);
-    }
-
-    private void doParseSuperTypes(@Nonnull PsiType[] superTypes, @Nullable MyGenericInfo prevGenericInfo) {
-        if (superTypes.length == 0) {
-            return;
-        }
-        for (PsiType superPsiType : superTypes) {
-            if (superPsiType instanceof PsiClassType) {
-                PsiClass superPsiClass = ((PsiClassType) superPsiType).resolve();
-                if (prevGenericInfo != null && prevGenericInfo.genericInfoMap.containsKey(superPsiClass)) {
-                    continue;
-                }
-
-                Map<String, PsiType> superTypeMapping = getMapping((PsiClassType) superPsiType, superPsiClass);
-                if (superTypeMapping != null) {
-                    this.genericInfoMap.put(superPsiClass, superTypeMapping);
-                }
-                doParseSuperTypes(superPsiType.getSuperTypes(), prevGenericInfo);
-            }
-        }
-    }
-
+    @Nullable
     private Map<String, PsiType> getMapping(@NotNull PsiClassType psiClassType, PsiClass psiClass) {
         if (psiClass != null) {
             // 实际泛型的参数
@@ -116,20 +72,17 @@ class MyGenericInfo {
 
     /**
      * 获取泛型T代表的实际类型
-     * @param containingClass
      * @param typeParameterName
      * @return
      */
     @Nullable
-    PsiType getRealType(PsiClass containingClass, String typeParameterName) {
-        if (containingClass == null) {
-            return null;
-        }
-        Map<String, PsiType> mapping = this.genericInfoMap.get(containingClass);
-        if (mapping == null) {
-            return null;
-        }
-        return mapping.get(typeParameterName);
+    PsiType getRealType(String typeParameterName) {
+//        Map<String, PsiType> mapping = this.genericInfoMap.get(containingClass);
+//        if (mapping == null) {
+//            return null;
+//        }
+//        return mapping.get(typeParameterName);
+        return genericInfoMap.get(typeParameterName);
     }
 
     PsiClass getPsiClass() {

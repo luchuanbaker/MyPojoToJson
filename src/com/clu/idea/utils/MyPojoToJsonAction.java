@@ -4,6 +4,7 @@ import com.clu.idea.MyPluginException;
 import com.google.common.io.LineReader;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.intellij.lang.jvm.types.JvmReferenceType;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationDisplayType;
 import com.intellij.notification.NotificationGroup;
@@ -18,6 +19,7 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.psi.util.PsiUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -122,7 +124,7 @@ public class MyPojoToJsonAction extends AnAction {
         if (selectedTypeElement != null) {
             PsiType selectType = selectedTypeElement.getType();
             if (selectType instanceof PsiClassType) {
-                classInfo = new MyGenericInfo((PsiClassType) selectType, null);
+                classInfo = new MyGenericInfo((PsiClassType) selectType);
             }
         }
 
@@ -132,24 +134,22 @@ public class MyPojoToJsonAction extends AnAction {
             if (selectedNewExpression != null) {
                 PsiType selectType = selectedNewExpression.getType();
                 if (selectType instanceof PsiClassType) {
-                    classInfo = new MyGenericInfo((PsiClassType) selectType, null);
+                    classInfo = new MyGenericInfo((PsiClassType) selectType);
                 }
             }
         }
 
-
-        // 类声明
         if (classInfo == null) {
+            // 类声明
             /*PsiClass selectedClass = PsiTreeUtil.getContextOfType(element, PsiClass.class);
             if (selectedClass != null) {
                 classInfo = new MyGenericInfo(selectedClass);
             }*/
-            // 转换为纯类转JSON，抛弃泛型信息
-            classInfo = new MyGenericInfo(psiClass, null);
+            PsiClassType psiClassType = PsiTypesUtil.getClassType(psiClass);
+            classInfo = new MyGenericInfo(psiClassType);
         }
 
-        // List或者Map
-        Object result = getTypeStruct(classInfo);
+        Object result = typeResolve(classInfo.getPsiClassType(), classInfo, new ProcessingInfo());
         String json = GSON.toJson(result);
         try {
             json = myFormat(json);
@@ -172,141 +172,104 @@ public class MyPojoToJsonAction extends AnAction {
 //        }
     }
 
-    private List<String> getAllTypeNames(PsiType psiType) {
-        List<String> fieldTypeNames = new ArrayList<>();
-        PsiType[] superTypes = psiType.getSuperTypes();
-        fieldTypeNames.add(psiType.getPresentableText());
-        fieldTypeNames.addAll(Arrays.stream(superTypes).map(PsiType::getPresentableText).collect(Collectors.toList()));
-        return fieldTypeNames;
-    }
-
-    /**
-     * list格式的数组
-     * @param containingClass
-     * @param myGenericInfo
-     * @param psiType
-     * @param fieldTypeNames
-     * @return
-     */
-    private List<Object> tryGetListTypeStruct(PsiClass containingClass, MyGenericInfo myGenericInfo, PsiType psiType, List<String> fieldTypeNames) {
-        if (fieldTypeNames.stream().anyMatch((s) -> s.startsWith("Collection") || s.startsWith("Iterable"))) {
-            ArrayList<Object> list = new ArrayList<>();
-            PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
-            // deepType 可能会是 PsiArrayType: Response<SimpleUserInfoVo>[]
-            MyGenericInfo myGenericInfo2 = deepType instanceof PsiClassType ? new MyGenericInfo((PsiClassType) deepType, myGenericInfo) : null;
-            /*if (psiType instanceof PsiClassType) {
-                containingClass = ((PsiClassType) psiType).resolve();
-            }*/
-            list.add(typeResolve(containingClass, deepType, myGenericInfo2, 0, new ArrayList<>()));
-            return list;
+    private Object typeResolve(PsiType psiType, @Nullable MyGenericInfo myGenericInfo, @NotNull ProcessingInfo processingInfo) {
+        // 要放在try/finally外面
+        if (processingInfo.isProcessing(psiType)) {
+            // 防止递归依赖
+            return "Recursion(" + psiType.getPresentableText() + ")...";
         }
-        return null;
-    }
 
-    private Object/*Map<String, Object>*/ getTypeStruct(MyGenericInfo myGenericInfo) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        PsiClass psiClass = myGenericInfo.getPsiClass();
-        PsiClassType psiClassType = myGenericInfo.getPsiClassType();
-        if (psiClass == null) {
-            return map;
-        } else {
-            if (psiClassType != null) {
-                // 直接就是List<Bean>格式
-                List<String> fieldTypeNames = getAllTypeNames(psiClassType);
-                List<Object> list = tryGetListTypeStruct(psiClass, myGenericInfo, psiClassType, fieldTypeNames);
-                if (list != null) {
-                    return list;
-                }
+        try {
+            processingInfo.increase();
+            processingInfo.start(psiType);
+
+            if (processingInfo.getLevel() > 20) {
+                String content = "This class reference level exceeds maximum limit or has nested references!";
+                throw new MyPluginException(new MyPluginException(content));
             }
 
-            // 普通bean属性遍历
-            for (PsiField psiField : getAllMyNonStaticFields(psiClass)) {
-                map.put(psiField.getName(), typeResolve(psiField.getContainingClass(), psiField.getType(), myGenericInfo, 0, new ArrayList<>()));
+            Object primitiveTypeDefaultValue = getDefaultValue(psiType);
+            if (primitiveTypeDefaultValue != null) {
+                return primitiveTypeDefaultValue;
             }
-            return map;
-        }
-    }
 
-    private Object typeResolve(@Nullable PsiClass containingClass, PsiType psiType, @Nullable MyGenericInfo myGenericInfo, int level, @NotNull List<PsiType> resolvingTypes) {
-        ++level;
-        if (level > 50) {
-            String content = "This class reference level exceeds maximum limit or has nested references!";
-            throw new MyPluginException(new MyPluginException(content));
-        }
+            PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
 
-        Object primitiveTypeDefaultValue = getDefaultValue(psiType);
-        if (primitiveTypeDefaultValue != null) {
-            return primitiveTypeDefaultValue;
-        }
-
-        PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
-
-        if (psiType instanceof PsiArrayType) {
-            List<Object> list = new ArrayList<>();
-            PsiType deepType = psiType.getDeepComponentType();
-            MyGenericInfo myGenericInfo2 = new MyGenericInfo((PsiClassType) deepType, myGenericInfo);
-            list.add(typeResolve(null, deepType, myGenericInfo2, level, resolvingTypes));
-            return list;
-        } else {
-            Map<String, Object> map = new LinkedHashMap<>();
-            if (psiClass instanceof PsiTypeParameter/*表示当前字段的类型是一个泛型类型*/ && myGenericInfo != null) {
-                // 当fieldPsiClass不为null，就表示fieldPsiType一定是PsiClassType类型，参考resolveClassInClassTypeOnly的源码
-                // 当前属性psiType所隶属于的类
-                PsiType realType = myGenericInfo.getRealType(containingClass, psiType.getPresentableText());
-                // realType有可能是null，比如泛型信息没有填写
-                if (realType == null || realType == MissingGenericType.INSTANCE) {
-                    return null;
-                }
-
-                if (resolvingTypes.contains(realType)) {
-                    // 防止递归依赖
-                    return "Recursion("+ realType.getPresentableText() +")...";
-                }
-                try {
-                    resolvingTypes.add(realType);
-
-                    MyGenericInfo myGenericInfo2 = new MyGenericInfo((PsiClassType) realType, myGenericInfo);
-                    return typeResolve(null, realType, myGenericInfo2, level, resolvingTypes);
-                } finally {
-                    resolvingTypes.remove(realType);
-                }
-
-            }
-            if (psiClass == null) {
-                return map;
-            } else if (psiClass.isEnum()) {
-                for (PsiField field : psiClass.getFields()) {
-                    if (field instanceof PsiEnumConstant) {
-                        return field.getName();
-                    }
-                }
-                return "";
+            if (psiType instanceof PsiArrayType) {
+                List<Object> list = new ArrayList<>();
+                PsiType deepType = psiType.getDeepComponentType();
+                MyGenericInfo myGenericInfo2 = new MyGenericInfo((PsiClassType) deepType);
+                list.add(typeResolve(deepType, myGenericInfo2, processingInfo));
+                return list;
             } else {
-                List<String> fieldTypeNames = getAllTypeNames(psiType);
-                List<Object> list = tryGetListTypeStruct(containingClass, myGenericInfo, psiType, fieldTypeNames);
-                if (list != null) {
-                    return list;
-                }
-
-                List<String> retain = new ArrayList<>(fieldTypeNames);
-                /*取交集，常见类型的默认值*/
-                retain.retainAll(normalTypes.keySet());
-                if (!retain.isEmpty()) {
-                    String typeName = retain.get(0);
-                    return normalTypes.get(typeName);
-                } else {
-                    if (isIgnoreForValue(psiClass)) {
+                Map<String, Object> map = new LinkedHashMap<>();
+                if (psiClass instanceof PsiTypeParameter/*表示当前字段的类型是一个泛型类型*/ && myGenericInfo != null) {
+                    // 当fieldPsiClass不为null，就表示fieldPsiType一定是PsiClassType类型，参考resolveClassInClassTypeOnly的源码
+                    // 当前属性psiType所隶属于的类
+                    PsiType realType = myGenericInfo.getRealType(psiType.getPresentableText());
+                    // realType有可能是null，比如泛型信息没有填写
+                    if (realType == null) {
                         return null;
                     }
-
-                    MyGenericInfo myGenericInfo2 = psiType instanceof PsiClassType ? new MyGenericInfo((PsiClassType) psiType, myGenericInfo) : new MyGenericInfo(psiClass, myGenericInfo);
-                    for (PsiField psiField : getAllMyNonStaticFields(psiClass)) {
-                        PsiType fieldType = psiField.getType();
-                        map.put(psiField.getName(), typeResolve(psiField.getContainingClass(), fieldType, myGenericInfo2, level, resolvingTypes));
+                    if (realType == MissingGenericType.INSTANCE) {
+                        return "null(rawType)("+ myGenericInfo.getPsiClassType().getName() +":"+ psiType.getPresentableText() +")";
                     }
+
+                    MyGenericInfo myGenericInfo2 = new MyGenericInfo((PsiClassType) realType);
+                    return typeResolve(realType, myGenericInfo2, processingInfo);
+                }
+                if (psiClass == null) {
                     return map;
+                } else if (psiClass.isEnum()) {
+                    for (PsiField field : psiClass.getFields()) {
+                        if (field instanceof PsiEnumConstant) {
+                            return field.getName();
+                        }
+                    }
+                    return "";
+                } else {
+                    List<String> fieldTypeNames = new ArrayList<>();
+                    PsiType[] superTypes = psiType.getSuperTypes();
+                    fieldTypeNames.add(psiType.getPresentableText());
+                    fieldTypeNames.addAll(Arrays.stream(superTypes).map(PsiType::getPresentableText).collect(Collectors.toList()));
+                    // tryGetListTypeStruct(myGenericInfo, psiType, fieldTypeNames);
+                    if (fieldTypeNames.stream().anyMatch((s) -> s.startsWith("Collection") || s.startsWith("Iterable"))) {
+                        List<Object> list = new ArrayList<>();
+                        PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
+                        // deepType 可能会是 PsiArrayType: Response<SimpleUserInfoVo>[]
+                        // MyGenericInfo myGenericInfo2 = deepType instanceof PsiClassType ? new MyGenericInfo((PsiClassType) deepType, myGenericInfo) : null;
+                        MyGenericInfo myGenericInfo2 = null;
+                        if (deepType != null) {
+                            if (deepType instanceof PsiClassType) {
+                                myGenericInfo2 = new MyGenericInfo((PsiClassType) deepType);
+                            } else {
+                                // PsiArrayType: Response<SimpleUserInfoVo>[]
+                                myGenericInfo2 = new MyGenericInfo(deepType);
+                            }
+                        }
+                        list.add(typeResolve(deepType, myGenericInfo2, new ProcessingInfo()));
+                        return list;
+                    }
+
+                    List<String> retain = new ArrayList<>(fieldTypeNames);
+                    /*取交集，常见类型的默认值*/
+                    retain.retainAll(normalTypes.keySet());
+                    if (!retain.isEmpty()) {
+                        String typeName = retain.get(0);
+                        return normalTypes.get(typeName);
+                    } else {
+                        if (isIgnoreForValue(psiClass)) {
+                            return null;
+                        }
+
+                        listAllMyNonStatusFields(psiType, myGenericInfo, map, processingInfo);
+                        return map;
+                    }
                 }
             }
+        } finally {
+            processingInfo.decrease();
+            processingInfo.finish();
         }
     }
 
@@ -339,19 +302,25 @@ public class MyPojoToJsonAction extends AnAction {
         return false;
     }
 
-    private List<PsiField> getAllMyNonStaticFields(PsiClass psiClass) {
-        List<PsiField> fieldList = new ArrayList<>();
-        PsiClass currentClass = psiClass;
-        while (currentClass != null && !isIgnoreForValue(currentClass)) {
-            for (PsiField psiField : currentClass.getFields()) {
-                if (isIgnoreForKey(psiField)) {
-                    continue;
-                }
-                fieldList.add(psiField);
-            }
-            currentClass = currentClass.getSuperClass();
+    private void listAllMyNonStatusFields(@NotNull PsiType psiType, MyGenericInfo myGenericInfo, Map<String, Object> map, ProcessingInfo processingInfo) {
+        PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
+        if (psiClass == null) {
+            return;
         }
-        return fieldList;
+        if (isIgnoreForValue(psiClass)) {
+            return;
+        }
+        for (PsiField psiField : psiClass.getFields()) {
+            if (isIgnoreForKey(psiField)) {
+                continue;
+            }
+            map.put(psiField.getName(), typeResolve(psiField.getType(), myGenericInfo, processingInfo));
+        }
+        JvmReferenceType superClassType = psiClass.getSuperClassType();
+        if (superClassType instanceof PsiClassType) {
+            MyGenericInfo myGenericInfo2 = new MyGenericInfo((PsiClassType) superClassType);
+            listAllMyNonStatusFields((PsiClassType) superClassType, myGenericInfo2, map, processingInfo);
+        }
     }
 
     private Object getDefaultValue(PsiType psiType) {
@@ -386,7 +355,7 @@ public class MyPojoToJsonAction extends AnAction {
                 return (byte) 0;
             case "character": // 兼容包装类型
             case "char":
-                return '\0';
+                return 'C';
             case "short":
                 return (short) 0;
             case "int":
