@@ -30,7 +30,14 @@ public class ProcessingInfo {
     }
 
     public boolean isProcessing(PsiType psiType) {
-        return this.types.contains(psiType);
+        int count = 0;
+        for (PsiType type : this.types) {
+            if (type != null && type.equals(psiType)) {
+                count++;
+            }
+        }
+        // 保留1次递归信息
+        return count > 1;
     }
 
     public int getLevel() {
