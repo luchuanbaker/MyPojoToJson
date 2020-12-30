@@ -18,6 +18,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
+import com.intellij.psi.PsiClassType.ClassResolveResult;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.psi.util.PsiUtil;
@@ -184,6 +185,10 @@ public class MyPojoToJsonAction extends AnAction {
 
         PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
 
+        if (psiClass != null && CommonClassNames.JAVA_LANG_OBJECT.equals(psiClass.getQualifiedName())) {
+            return Collections.emptyMap();
+        }
+
         if (psiType instanceof PsiArrayType) {
             List<Object> list = new ArrayList<>();
             PsiType deepType = psiType.getDeepComponentType();
@@ -229,6 +234,7 @@ public class MyPojoToJsonAction extends AnAction {
                     // MyGenericInfo myGenericInfo2 = deepType instanceof PsiClassType ? new MyGenericInfo((PsiClassType) deepType, myGenericInfo) : null;
                     MyGenericInfo myGenericInfo2 = null;
                     if (deepType != null) {
+                        // 情况：deepType是PageList中的data: List<T>的T，myGenericInfo类型是PsiType:PageList<SearchGroupResultItemVo>
                         if (deepType instanceof PsiClassType) {
                             myGenericInfo2 = new MyGenericInfo((PsiClassType) deepType);
                         } else {
@@ -290,12 +296,65 @@ public class MyPojoToJsonAction extends AnAction {
         return false;
     }
 
+    private boolean isGenericType(PsiType psiType) {
+        if (PsiUtil.resolveClassInClassTypeOnly(psiType) instanceof PsiTypeParameter) {
+            return true;
+        }
+
+        ClassResolveResult classResolveResult = PsiUtil.resolveGenericsClassInType(psiType);
+        Map<PsiTypeParameter, PsiType> substitutionMap = classResolveResult.getSubstitutor().getSubstitutionMap();
+        if (substitutionMap.isEmpty()) {
+            return false;
+        }
+
+        for (PsiType type : substitutionMap.values()) {
+            if (isGenericType(type)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private PsiType processGenericType(PsiField psiField, PsiType classType) {
+        PsiType fieldType = psiField.getType();
+        PsiElement context = psiField.getContext();
+        if (fieldType instanceof PsiClassType && classType instanceof PsiClassType && context != null) {
+            PsiClassType.ClassResolveResult fieldClassResolveResult = ((PsiClassType) fieldType).resolveGenerics();
+
+            ClassResolveResult classResolveResult = ((PsiClassType) classType).resolveGenerics();
+            PsiSubstitutor realTypePsiSubstitutor = classResolveResult.getSubstitutor();
+
+            if (isGenericType(fieldType)) {
+                PsiClass fieldClass = PsiUtil.resolveClassInClassTypeOnly(fieldType);
+                if (fieldClass instanceof PsiTypeParameter) {
+                    // fieldType就是泛型T
+                    return realTypePsiSubstitutor.substitute((PsiTypeParameter) fieldClass);
+                }
+
+                JavaPsiFacade facade = JavaPsiFacade.getInstance(context.getProject());
+                PsiSubstitutor substitutor = PsiSubstitutor.EMPTY;
+                if (fieldClass != null) {
+                    for (PsiTypeParameter psiTypeParameter : fieldClass.getTypeParameters()) {
+                        // List<E>的E转换为PageList<T>中data字段的List<T>的T
+                        PsiType substitute = fieldClassResolveResult.getSubstitutor().substitute(psiTypeParameter);
+                        // PageList<T> 的T 变成真实类型
+                        PsiType psiType = realTypePsiSubstitutor.substitute(substitute);
+                        substitutor = substitutor.put(psiTypeParameter, psiType);
+                    }
+                    return facade.getElementFactory().createType(fieldClass, substitutor, PsiUtil.getLanguageLevel(context));
+                }
+            }
+        }
+
+        return fieldType;
+    }
+
     private String listAllMyNonStatusFields(@NotNull PsiType psiType, MyGenericInfo myGenericInfo, Map<String, Object> map, ProcessingInfo processingInfo) {
         // 要放在try/finally外面
-        String genericText = psiType.getPresentableText();
         if (processingInfo.isListingFields(psiType)) {
             // 防止递归依赖
-            String className = genericText;
+            String className = psiType.getPresentableText();
             if (myGenericInfo != null && myGenericInfo.getPsiClassType() != null) {
                 className = myGenericInfo.getPsiClassType().getClassName();
             }
@@ -319,7 +378,8 @@ public class MyPojoToJsonAction extends AnAction {
                 if (isIgnoreForKey(psiField)) {
                     continue;
                 }
-                map.put(psiField.getName(), resolveType(psiField.getType(), myGenericInfo, processingInfo));
+                PsiType finalType = processGenericType(psiField, psiType);
+                map.put(psiField.getName(), resolveType(finalType, myGenericInfo, processingInfo));
             }
             JvmReferenceType superClassType = psiClass.getSuperClassType();
             if (superClassType instanceof PsiClassType) {
