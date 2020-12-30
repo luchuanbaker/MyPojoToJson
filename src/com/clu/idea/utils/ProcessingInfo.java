@@ -1,15 +1,15 @@
 package com.clu.idea.utils;
 
+import com.clu.idea.MyPluginException;
 import com.intellij.psi.PsiType;
 
-import java.util.List;
 import java.util.Stack;
 
 public class ProcessingInfo {
 
     private int level;
 
-    private Stack<PsiType> types = new Stack<>();
+    private Stack<PsiType> listingFieldsTypes = new Stack<>();
 
     public int increase() {
         return ++level;
@@ -19,28 +19,33 @@ public class ProcessingInfo {
         return --level;
     }
 
-    public List<PsiType> start(PsiType psiType) {
-        this.types.push(psiType);
-        return this.types;
+    public void startListFields(PsiType psiType) {
+        this.listingFieldsTypes.push(psiType);
     }
 
-    public List<PsiType> finish() {
-        this.types.pop();
-        return this.types;
+    public void finishListFields() {
+        this.listingFieldsTypes.pop();
     }
 
-    public boolean isProcessing(PsiType psiType) {
+
+    private int getCount(Stack<PsiType> stack, PsiType psiType) {
         int count = 0;
-        for (PsiType type : this.types) {
+        for (PsiType type : stack) {
             if (type != null && type.equals(psiType)) {
                 count++;
             }
         }
-        // 保留1次递归信息
-        return count > 1;
+        return count;
     }
 
-    public int getLevel() {
-        return level;
+    public boolean isListingFields(PsiType psiType) {
+        // 保留1次递归信息
+        return getCount(this.listingFieldsTypes, psiType) > 1;
+    }
+
+    public void checkOverflow() {
+        if (level > 50) {
+            throw new MyPluginException(new MyPluginException("This class reference level exceeds maximum limit or has nested references!"));
+        }
     }
 }

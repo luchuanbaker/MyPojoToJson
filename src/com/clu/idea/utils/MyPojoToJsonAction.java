@@ -149,7 +149,7 @@ public class MyPojoToJsonAction extends AnAction {
             classInfo = new MyGenericInfo(psiClassType);
         }
 
-        Object result = typeResolve(classInfo.getPsiClassType(), classInfo, new ProcessingInfo());
+        Object result = resolveType(classInfo.getPsiClassType(), classInfo, new ProcessingInfo());
         String json = GSON.toJson(result);
         try {
             json = myFormat(json);
@@ -172,14 +172,10 @@ public class MyPojoToJsonAction extends AnAction {
 //        }
     }
 
-    private Object typeResolve(PsiType psiType, @Nullable MyGenericInfo myGenericInfo, @NotNull ProcessingInfo processingInfo) {
+    private Object resolveType(PsiType psiType, @Nullable MyGenericInfo myGenericInfo, @NotNull ProcessingInfo processingInfo) {
         String genericText = psiType.getPresentableText();
 
-
-        if (processingInfo.getLevel() > 20) {
-            String content = "This class reference level exceeds maximum limit or has nested references!";
-            throw new MyPluginException(new MyPluginException(content));
-        }
+        processingInfo.checkOverflow();
 
         Object primitiveTypeDefaultValue = getDefaultValue(psiType);
         if (primitiveTypeDefaultValue != null) {
@@ -192,7 +188,7 @@ public class MyPojoToJsonAction extends AnAction {
             List<Object> list = new ArrayList<>();
             PsiType deepType = psiType.getDeepComponentType();
             MyGenericInfo myGenericInfo2 = new MyGenericInfo((PsiClassType) deepType);
-            list.add(typeResolve(deepType, myGenericInfo2, processingInfo));
+            list.add(resolveType(deepType, myGenericInfo2, processingInfo));
             return list;
         } else {
             Map<String, Object> map = new LinkedHashMap<>();
@@ -209,7 +205,7 @@ public class MyPojoToJsonAction extends AnAction {
                 }
 
                 MyGenericInfo myGenericInfo2 = new MyGenericInfo((PsiClassType) realType);
-                return typeResolve(realType, myGenericInfo2, processingInfo);
+                return resolveType(realType, myGenericInfo2, processingInfo);
             }
             if (psiClass == null) {
                 return map;
@@ -239,7 +235,7 @@ public class MyPojoToJsonAction extends AnAction {
                             // PsiArrayType: Response<SimpleUserInfoVo>[]
                             myGenericInfo2 = new MyGenericInfo(deepType);
                         }
-                        list.add(typeResolve(deepType, myGenericInfo2, new ProcessingInfo()));
+                        list.add(resolveType(deepType, myGenericInfo2, processingInfo));
                     }
                     return list;
                 }
@@ -263,7 +259,6 @@ public class MyPojoToJsonAction extends AnAction {
                 }
             }
         }
-
     }
 
     private boolean isIgnoreForValue(@NotNull String qualifiedName) {
@@ -298,7 +293,7 @@ public class MyPojoToJsonAction extends AnAction {
     private String listAllMyNonStatusFields(@NotNull PsiType psiType, MyGenericInfo myGenericInfo, Map<String, Object> map, ProcessingInfo processingInfo) {
         // 要放在try/finally外面
         String genericText = psiType.getPresentableText();
-        if (processingInfo.isProcessing(psiType)) {
+        if (processingInfo.isListingFields(psiType)) {
             // 防止递归依赖
             String className = genericText;
             if (myGenericInfo != null && myGenericInfo.getPsiClassType() != null) {
@@ -307,9 +302,11 @@ public class MyPojoToJsonAction extends AnAction {
             return "Recursion(" + className + ")...";
         }
 
+        processingInfo.checkOverflow();
+
         try {
             processingInfo.increase();
-            processingInfo.start(psiType);
+            processingInfo.startListFields(psiType);
 
             PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
             if (psiClass == null) {
@@ -322,7 +319,7 @@ public class MyPojoToJsonAction extends AnAction {
                 if (isIgnoreForKey(psiField)) {
                     continue;
                 }
-                map.put(psiField.getName(), typeResolve(psiField.getType(), myGenericInfo, processingInfo));
+                map.put(psiField.getName(), resolveType(psiField.getType(), myGenericInfo, processingInfo));
             }
             JvmReferenceType superClassType = psiClass.getSuperClassType();
             if (superClassType instanceof PsiClassType) {
@@ -332,7 +329,7 @@ public class MyPojoToJsonAction extends AnAction {
             return null;
         } finally {
             processingInfo.decrease();
-            processingInfo.finish();
+            processingInfo.finishListFields();
         }
     }
 
