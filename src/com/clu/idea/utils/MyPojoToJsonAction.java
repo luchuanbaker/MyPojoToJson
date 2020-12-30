@@ -241,7 +241,7 @@ public class MyPojoToJsonAction extends AnAction {
                         return null;
                     }
 
-                    String result = listAllMyNonStatusFields(psiType, myClassInfo, map, processingInfo);
+                    String result = listAllMyNonStaticFields(psiType, myClassInfo, map, processingInfo);
                     if (result != null) {
                         return result;
                     }
@@ -337,7 +337,7 @@ public class MyPojoToJsonAction extends AnAction {
         return fieldType;
     }
 
-    private String listAllMyNonStatusFields(@NotNull PsiType psiType, MyClassInfo myClassInfo, Map<String, Object> map, ProcessingInfo processingInfo) {
+    private String listAllMyNonStaticFields(@NotNull PsiType psiType, MyClassInfo myClassInfo, Map<String, Object> map, ProcessingInfo processingInfo) {
         // 要放在try/finally外面
         if (processingInfo.isListingFields(psiType)) {
             // 防止递归依赖
@@ -377,7 +377,7 @@ public class MyPojoToJsonAction extends AnAction {
             JvmReferenceType superClassType = psiClass.getSuperClassType();
             if (superClassType instanceof PsiClassType) {
                 MyClassInfo myClassInfo2 = new MyClassInfo((PsiClassType) superClassType);
-                return listAllMyNonStatusFields((PsiClassType) superClassType, myClassInfo2, map, processingInfo);
+                return listAllMyNonStaticFields((PsiClassType) superClassType, myClassInfo2, map, processingInfo);
             }
             return null;
         } finally {
