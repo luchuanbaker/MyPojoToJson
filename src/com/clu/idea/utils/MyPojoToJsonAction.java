@@ -51,7 +51,7 @@ public class MyPojoToJsonAction extends AnAction {
             return;
         }
 
-        Object result = MyPojoToJsonCore.resolveType(psiType, new ProcessingInfo());
+        Object result = MyPojoToJsonCore.resolveType(psiType, new ProcessingInfo().setProject(project));
         String json = GSON.toJson(result);
         try {
             json = MyPojoToJsonCore.myFormat(json);

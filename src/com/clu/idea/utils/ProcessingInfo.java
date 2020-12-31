@@ -1,6 +1,7 @@
 package com.clu.idea.utils;
 
 import com.clu.idea.MyPluginException;
+import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiType;
 
 import java.util.Stack;
@@ -8,6 +9,8 @@ import java.util.Stack;
 public class ProcessingInfo {
 
     private int level;
+
+    private Project project;
 
     private Stack<PsiType> listingFieldsTypes = new Stack<>();
 
@@ -19,6 +22,15 @@ public class ProcessingInfo {
         return --level;
     }
 
+    public Project getProject() {
+        return project;
+    }
+
+    public ProcessingInfo setProject(Project project) {
+        this.project = project;
+        return this;
+    }
+
     public void startListFields(PsiType psiType) {
         this.listingFieldsTypes.push(psiType);
     }
@@ -26,7 +38,6 @@ public class ProcessingInfo {
     public void finishListFields() {
         this.listingFieldsTypes.pop();
     }
-
 
     private int getCount(Stack<PsiType> stack, PsiType psiType) {
         int count = 0;

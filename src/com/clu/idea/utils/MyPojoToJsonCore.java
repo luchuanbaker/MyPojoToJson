@@ -7,9 +7,11 @@ import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.psi.*;
 import com.intellij.psi.PsiClassType.ClassResolveResult;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.psi.util.PsiUtil;
+import com.intellij.util.Processor;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
@@ -21,7 +23,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class MyPojoToJsonCore {
 
@@ -121,6 +122,29 @@ public class MyPojoToJsonCore {
         return psiType.getPresentableText();
     }
 
+    private static void getAllTypeNames(PsiType psiType, Set<String> psiTypeNames) {
+        processAllTypes(psiType, new Processor<PsiType>() {
+            @Override
+            public boolean process(PsiType psiType) {
+                psiTypeNames.add(psiType.getPresentableText());
+                return true;
+            }
+        });
+    }
+
+    private static void processAllTypes(PsiType psiType, Processor<PsiType> processor) {
+        if (psiType == null) {
+            return;
+        }
+        if (!processor.process(psiType)) {
+            return;
+        }
+
+        for (PsiType subPsiType : psiType.getSuperTypes()) {
+            processAllTypes(subPsiType, processor);
+        }
+    }
+
     static Object resolveType(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
         String genericText = psiType.getPresentableText();
 
@@ -154,11 +178,48 @@ public class MyPojoToJsonCore {
                 }
                 return "";
             } else {
-                List<String> fieldTypeNames = new ArrayList<>();
-                PsiType[] superTypes = psiType.getSuperTypes();
-                fieldTypeNames.add(genericText);
-                fieldTypeNames.addAll(Arrays.stream(superTypes).map(PsiType::getPresentableText).collect(Collectors.toList()));
-                if (fieldTypeNames.stream().anyMatch((s) -> s.startsWith("Collection") || s.startsWith("Iterable"))) {
+                PsiClassType mapType = PsiType.getTypeByName(CommonClassNames.JAVA_UTIL_MAP, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
+                if (mapType.isAssignableFrom(psiType)) {
+                    // java.util.Map
+                    PsiClass mapClass = mapType.resolve();
+                    processAllTypes(psiType, new Processor<PsiType>() {
+                        @Override
+                        public boolean process(PsiType psiType) {
+                            ClassResolveResult classResolveResult = PsiUtil.resolveGenericsClassInType(psiType);
+                            if (Objects.requireNonNull(mapClass).equals(classResolveResult.getElement())) {
+                                Object key = null;
+                                Object value = null;
+                                for (Map.Entry<PsiTypeParameter, PsiType> entry : classResolveResult.getSubstitutor().getSubstitutionMap().entrySet()) {
+                                    PsiType realType = entry.getValue();
+                                    String name = entry.getKey().getName();
+                                    if ("K".equals(name)) {
+                                        if (realType == null) {
+                                            key = "(rawType)";
+                                        } else {
+                                            // key不能使用类型的默认值，使用类型值
+                                            key = "{"+ realType.getPresentableText() +"}";
+                                        }
+                                    } else if ("V".equals(name)) {
+                                        if (realType == null) {
+                                            value = "(rawType)";
+                                        } else {
+                                            value = resolveType(realType, processingInfo);
+                                        }
+                                    }
+                                }
+                                if (key != null) {
+                                    map.put(String.valueOf(key), value);
+                                }
+                                return false;
+                            }
+                            return true;
+                        }
+                    });
+                    return map;
+                }
+                PsiClassType iterableType = PsiType.getTypeByName(CommonClassNames.JAVA_LANG_ITERABLE, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
+                if (iterableType.isAssignableFrom(psiType)) {
+                    // java.lang.Iterable
                     List<Object> list = new ArrayList<>();
                     PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
                     if (deepType != null) {
@@ -167,6 +228,8 @@ public class MyPojoToJsonCore {
                     return list;
                 }
 
+                Set<String> fieldTypeNames = new LinkedHashSet<>();
+                getAllTypeNames(psiType, fieldTypeNames);
                 List<String> retain = new ArrayList<>(fieldTypeNames);
                 /*取交集，常见类型的默认值*/
                 retain.retainAll(normalTypes.keySet());
