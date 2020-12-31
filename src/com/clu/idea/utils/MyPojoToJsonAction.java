@@ -24,7 +24,6 @@ import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.psi.util.PsiUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
@@ -144,6 +143,14 @@ public class MyPojoToJsonAction extends AnAction {
         e.getPresentation().setEnabled(true);
     }
 
+    private String getClassName(PsiType psiType) {
+        PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
+        if (psiClass != null) {
+            return psiClass.getName();
+        }
+        return psiType.getPresentableText();
+    }
+
     @Override
     public void actionPerformed(AnActionEvent e) {
         Project project = e.getProject();
@@ -158,9 +165,7 @@ public class MyPojoToJsonAction extends AnAction {
             return;
         }
 
-        MyClassInfo classInfo = new MyClassInfo(psiType);
-
-        Object result = resolveType(classInfo.getPsiClassType(), classInfo, new ProcessingInfo());
+        Object result = resolveType(psiType, new ProcessingInfo());
         String json = GSON.toJson(result);
         try {
             json = myFormat(json);
@@ -170,7 +175,7 @@ public class MyPojoToJsonAction extends AnAction {
         StringSelection selection = new StringSelection(json);
         Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
         clipboard.setContents(selection, selection);
-        String message = "Convert " + classInfo.getPsiClass().getName() + " to JSON success, copied to clipboard.";
+        String message = "Convert " + getClassName(psiType) + " to JSON success, copied to clipboard.";
         Notification success = notifyGroup.createNotification(message, NotificationType.INFORMATION);
         Bus.notify(success, project);
 
@@ -183,7 +188,7 @@ public class MyPojoToJsonAction extends AnAction {
 //        }
     }
 
-    private Object resolveType(@NotNull PsiType psiType, @Nullable MyClassInfo myClassInfo, @NotNull ProcessingInfo processingInfo) {
+    private Object resolveType(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
         String genericText = psiType.getPresentableText();
 
         processingInfo.checkOverflow();
@@ -202,13 +207,7 @@ public class MyPojoToJsonAction extends AnAction {
         if (psiType instanceof PsiArrayType) {
             List<Object> list = new ArrayList<>();
             PsiType deepType = psiType.getDeepComponentType();
-            MyClassInfo myClassInfo2 = null;
-            if (deepType instanceof PsiClassType) {
-                myClassInfo2 = new MyClassInfo((PsiClassType) deepType);
-            } else {
-                myClassInfo2 = new MyClassInfo(psiType);
-            }
-            list.add(resolveType(deepType, myClassInfo2, processingInfo));
+            list.add(resolveType(deepType, processingInfo));
             return list;
         } else {
             Map<String, Object> map = new LinkedHashMap<>();
@@ -229,18 +228,8 @@ public class MyPojoToJsonAction extends AnAction {
                 if (fieldTypeNames.stream().anyMatch((s) -> s.startsWith("Collection") || s.startsWith("Iterable"))) {
                     List<Object> list = new ArrayList<>();
                     PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
-                    // deepType 可能会是 PsiArrayType: Response<SimpleUserInfoVo>[]
-                    // MyGenericInfo myGenericInfo2 = deepType instanceof PsiClassType ? new MyGenericInfo((PsiClassType) deepType, myGenericInfo) : null;
-                    MyClassInfo myClassInfo2;
                     if (deepType != null) {
-                        // 情况：deepType是PageList中的data: List<T>的T，myGenericInfo类型是PsiType:PageList<SearchGroupResultItemVo>
-                        if (deepType instanceof PsiClassType) {
-                            myClassInfo2 = new MyClassInfo((PsiClassType) deepType);
-                        } else {
-                            // PsiArrayType: Response<SimpleUserInfoVo>[]
-                            myClassInfo2 = new MyClassInfo(deepType);
-                        }
-                        list.add(resolveType(deepType, myClassInfo2, processingInfo));
+                        list.add(resolveType(deepType, processingInfo));
                     }
                     return list;
                 }
@@ -256,7 +245,7 @@ public class MyPojoToJsonAction extends AnAction {
                         return null;
                     }
 
-                    String result = listAllMyNonStaticFields(psiType, myClassInfo, map, processingInfo);
+                    String result = listAllMyNonStaticFields(psiType, map, processingInfo);
                     if (result != null) {
                         return result;
                     }
@@ -357,14 +346,11 @@ public class MyPojoToJsonAction extends AnAction {
         return fieldType;
     }
 
-    private String listAllMyNonStaticFields(@NotNull PsiType psiType, MyClassInfo myClassInfo, Map<String, Object> map, ProcessingInfo processingInfo) {
+    private String listAllMyNonStaticFields(@NotNull PsiType psiType, Map<String, Object> map, ProcessingInfo processingInfo) {
+        String className = getClassName(psiType);
         // 要放在try/finally外面
         if (processingInfo.isListingFields(psiType)) {
             // 防止递归依赖
-            String className = psiType.getPresentableText();
-            if (myClassInfo != null && myClassInfo.getPsiClassType() != null) {
-                className = myClassInfo.getPsiClassType().getClassName();
-            }
             return "Recursion(" + className + ")...";
         }
 
@@ -388,16 +374,15 @@ public class MyPojoToJsonAction extends AnAction {
                 PsiType finalType = processGenericType(psiField, psiType);
                 Object value;
                 if (finalType == null) {
-                    value = "null(rawType)(" + myClassInfo.getPsiClassType().getName() + ":" + psiField.getType().getPresentableText() + ")";
+                    value = "null(rawType)(" + className + ":" + psiField.getType().getPresentableText() + ")";
                 } else {
-                    value = resolveType(finalType, myClassInfo, processingInfo);
+                    value = resolveType(finalType, processingInfo);
                 }
                 map.put(psiField.getName(), value);
             }
             JvmReferenceType superClassType = psiClass.getSuperClassType();
             if (superClassType instanceof PsiClassType) {
-                MyClassInfo myClassInfo2 = new MyClassInfo((PsiClassType) superClassType);
-                return listAllMyNonStaticFields((PsiClassType) superClassType, myClassInfo2, map, processingInfo);
+                return listAllMyNonStaticFields((PsiClassType) superClassType, map, processingInfo);
             }
             return null;
         } finally {
