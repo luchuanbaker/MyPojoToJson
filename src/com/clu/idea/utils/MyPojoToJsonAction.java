@@ -108,13 +108,21 @@ public class MyPojoToJsonAction extends AnAction {
             }
         }
 
-        // 类声明
         if (psiClass == null) {
             // 类声明
             if (psiElement instanceof PsiIdentifier) {
                 PsiClass selectedClass = PsiTreeUtil.getContextOfType(psiElement, PsiClass.class);
                 if (selectedClass != null && psiElement.getText() != null && selectedClass.getNameIdentifier() != null && psiElement.getText().equals(selectedClass.getNameIdentifier().getText())) {
                     psiClass = selectedClass;
+                } else {
+                    // Bean.of()...
+                    PsiReferenceExpression referenceExpression = PsiTreeUtil.getContextOfType(psiElement, PsiReferenceExpression.class);
+                    if (referenceExpression != null) {
+                        PsiElement element = referenceExpression.resolve();
+                        if (element instanceof PsiClass) {
+                            psiClass = (PsiClass) element;
+                        }
+                    }
                 }
             }
         }
