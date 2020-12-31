@@ -31,10 +31,7 @@ public class MyPojoToJsonAction extends AnAction {
     public void update(AnActionEvent e) {
         DataContext dataContext = e.getDataContext();
         PsiType psiType = MyPojoToJsonCore.checkAndGetPsiType(dataContext);
-        if (psiType == null) {
-            e.getPresentation().setEnabled(false);
-        }
-        e.getPresentation().setEnabled(true);
+        e.getPresentation().setEnabled(psiType != null);
     }
 
     @Override
