@@ -158,7 +158,7 @@ public class MyPojoToJsonAction extends AnAction {
             return;
         }
 
-        MyClassInfo classInfo = new MyClassInfo((PsiClassType) psiType);
+        MyClassInfo classInfo = new MyClassInfo(psiType);
 
         Object result = resolveType(classInfo.getPsiClassType(), classInfo, new ProcessingInfo());
         String json = GSON.toJson(result);
@@ -202,7 +202,12 @@ public class MyPojoToJsonAction extends AnAction {
         if (psiType instanceof PsiArrayType) {
             List<Object> list = new ArrayList<>();
             PsiType deepType = psiType.getDeepComponentType();
-            MyClassInfo myClassInfo2 = new MyClassInfo((PsiClassType) deepType);
+            MyClassInfo myClassInfo2 = null;
+            if (deepType instanceof PsiClassType) {
+                myClassInfo2 = new MyClassInfo((PsiClassType) deepType);
+            } else {
+                myClassInfo2 = new MyClassInfo(psiType);
+            }
             list.add(resolveType(deepType, myClassInfo2, processingInfo));
             return list;
         } else {
@@ -226,7 +231,7 @@ public class MyPojoToJsonAction extends AnAction {
                     PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
                     // deepType 可能会是 PsiArrayType: Response<SimpleUserInfoVo>[]
                     // MyGenericInfo myGenericInfo2 = deepType instanceof PsiClassType ? new MyGenericInfo((PsiClassType) deepType, myGenericInfo) : null;
-                    MyClassInfo myClassInfo2 = null;
+                    MyClassInfo myClassInfo2;
                     if (deepType != null) {
                         // 情况：deepType是PageList中的data: List<T>的T，myGenericInfo类型是PsiType:PageList<SearchGroupResultItemVo>
                         if (deepType instanceof PsiClassType) {
