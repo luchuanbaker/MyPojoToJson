@@ -67,88 +67,90 @@ public class MyPojoToJsonAction extends AnAction {
         normalTypes.put("LocalTime", now.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
     }
 
-    private PsiClass checkAndGetPsiClass(PsiFile psiFile, PsiElement psiElement) {
+    private PsiClassType checkAndGetPsiType(DataContext dataContext) {
+        Editor editor = CommonDataKeys.EDITOR.getData(dataContext);
+        PsiFile psiFile = CommonDataKeys.PSI_FILE.getData(dataContext);
+
         if (!(psiFile instanceof PsiJavaFile)) {
             return null;
         }
 
-        if (!(psiElement instanceof PsiClass)) {
+        if (editor == null) {
             return null;
         }
-        return (PsiClass) psiElement;
+
+        PsiElement psiElement = psiFile.findElementAt(editor.getCaretModel().getOffset());
+
+        // 类型，方法返回值，变量类型等
+        PsiTypeElement selectedTypeElement = PsiTreeUtil.getContextOfType(psiElement, PsiTypeElement.class);
+        if (selectedTypeElement != null) {
+            PsiType selectType = selectedTypeElement.getType();
+            if (selectType instanceof PsiClassType) {
+                return (PsiClassType) selectType;
+            }
+        }
+
+        // new
+        PsiNewExpression selectedNewExpression = PsiTreeUtil.getContextOfType(psiElement, PsiNewExpression.class);
+        if (selectedNewExpression != null) {
+            PsiType selectType = selectedNewExpression.getType();
+            if (selectType instanceof PsiClassType) {
+                return (PsiClassType) selectType;
+            }
+        }
+
+        // 构造方法
+        PsiClass psiClass = null;
+        PsiMethod selectedMethod = PsiTreeUtil.getContextOfType(psiElement, PsiMethod.class);
+        if (selectedMethod != null) {
+            if (selectedMethod.isConstructor()) {
+                psiClass = selectedMethod.getContainingClass();
+            }
+        }
+
+        // 类声明
+        if (psiClass == null) {
+            // 类声明
+            if (psiElement instanceof PsiIdentifier) {
+                PsiClass selectedClass = PsiTreeUtil.getContextOfType(psiElement, PsiClass.class);
+                if (selectedClass != null && psiElement.getText() != null && selectedClass.getNameIdentifier() != null && psiElement.getText().equals(selectedClass.getNameIdentifier().getText())) {
+                    psiClass = selectedClass;
+                }
+            }
+        }
+
+        if (psiClass != null) {
+            return PsiTypesUtil.getClassType(psiClass);
+        }
+
+        return null;
     }
 
     @Override
     public void update(AnActionEvent e) {
         DataContext dataContext = e.getDataContext();
-        PsiFile psiFile = CommonDataKeys.PSI_FILE.getData(dataContext);
-        // psiElement获取到的，直接是PsiJavaCodeReferenceElement关联的类类型
-        PsiElement psiElement = CommonDataKeys.PSI_ELEMENT.getData(dataContext);
-        PsiClass psiClass = checkAndGetPsiClass(psiFile, psiElement);
-        if (psiClass == null) {
+        PsiType psiType = checkAndGetPsiType(dataContext);
+        if (psiType == null) {
             e.getPresentation().setEnabled(false);
         }
     }
 
-    private Project project;
-
     @Override
     public void actionPerformed(AnActionEvent e) {
-        DataContext dataContext = e.getDataContext();
-        Editor editor = CommonDataKeys.EDITOR.getData(dataContext);
-        PsiFile psiFile = CommonDataKeys.PSI_FILE.getData(dataContext);
-        // psiElement获取到的，直接是PsiJavaCodeReferenceElement关联的类类型
-        PsiElement psiElement = CommonDataKeys.PSI_ELEMENT.getData(dataContext);
-
-        this.project = e.getProject();
-        if (editor == null || psiFile == null || project == null) {
+        Project project = e.getProject();
+        if (project == null) {
             return;
         }
 
-        PsiClass psiClass = checkAndGetPsiClass(psiFile, psiElement);
-        if (psiClass == null) {
+        DataContext dataContext = e.getDataContext();
+
+        PsiClassType psiType = checkAndGetPsiType(dataContext);
+        if (psiType == null) {
             e.getPresentation().setEnabled(false);
             return;
         }
 
-        // 找到当前光标的类型，不能直接获取PsiClass，因为泛型信息会丢失
-        PsiElement element = psiFile.findElementAt(editor.getCaretModel().getOffset());
-        if (element == null) {
-            Bus.notify(notifyGroup.createNotification("SelectedPsiElement is null", NotificationType.INFORMATION), project);
-            return;
-        }
-
-        MyClassInfo classInfo = null;
-
-        // 类型，方法返回值，变量类型等
-        PsiTypeElement selectedTypeElement = PsiTreeUtil.getContextOfType(element, PsiTypeElement.class);
-        if (selectedTypeElement != null) {
-            PsiType selectType = selectedTypeElement.getType();
-            if (selectType instanceof PsiClassType) {
-                classInfo = new MyClassInfo((PsiClassType) selectType);
-            }
-        }
-
-        // new
-        if (classInfo == null) {
-            PsiNewExpression selectedNewExpression = PsiTreeUtil.getContextOfType(element, PsiNewExpression.class);
-            if (selectedNewExpression != null) {
-                PsiType selectType = selectedNewExpression.getType();
-                if (selectType instanceof PsiClassType) {
-                    classInfo = new MyClassInfo((PsiClassType) selectType);
-                }
-            }
-        }
-
-        if (classInfo == null) {
-            // 类声明
-            /*PsiClass selectedClass = PsiTreeUtil.getContextOfType(element, PsiClass.class);
-            if (selectedClass != null) {
-                classInfo = new MyGenericInfo(selectedClass);
-            }*/
-            PsiClassType psiClassType = PsiTypesUtil.getClassType(psiClass);
-            classInfo = new MyClassInfo(psiClassType);
-        }
+        MyClassInfo classInfo = new MyClassInfo((PsiClassType) psiType);
 
         Object result = resolveType(classInfo.getPsiClassType(), classInfo, new ProcessingInfo());
         String json = GSON.toJson(result);
@@ -321,11 +323,16 @@ public class MyPojoToJsonAction extends AnAction {
                 PsiSubstitutor substitutor = PsiSubstitutor.EMPTY;
                 if (fieldClass != null) {
                     for (PsiTypeParameter psiTypeParameter : fieldClass.getTypeParameters()) {
+                        PsiType realType;
                         // List<E>的E转换为PageList<T>中data字段的List<T>的T
                         // psiTypeParameter为字段类型中的泛型声明，通过此方法获取到在本类中使用的泛型
-                        PsiType substitute = fieldClassResolveResult.getSubstitutor().substitute(psiTypeParameter);
-                        // 获取本类中泛型声明的T的真实类型：PageList<T> 的T 变成真实类型
-                        PsiType realType = realTypePsiSubstitutor.substitute(substitute);
+                        PsiType psiType = fieldClassResolveResult.getSubstitutor().substitute(psiTypeParameter);
+                        if (isGenericType(psiType)) {
+                            // 获取本类中泛型声明的T的真实类型：PageList<T> 的T 变成真实类型
+                            realType = realTypePsiSubstitutor.substitute(psiType);
+                        } else {
+                            realType = psiType;
+                        }
                         // 建立字段类型中泛型声明的E 到真实类型的映射
                         substitutor = substitutor.put(psiTypeParameter, realType);
                     }
