@@ -141,6 +141,7 @@ public class MyPojoToJsonAction extends AnAction {
         if (psiType == null) {
             e.getPresentation().setEnabled(false);
         }
+        e.getPresentation().setEnabled(true);
     }
 
     @Override
@@ -154,7 +155,6 @@ public class MyPojoToJsonAction extends AnAction {
 
         PsiClassType psiType = checkAndGetPsiType(dataContext);
         if (psiType == null) {
-            e.getPresentation().setEnabled(false);
             return;
         }
 
