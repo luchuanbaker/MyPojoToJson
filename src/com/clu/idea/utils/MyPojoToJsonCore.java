@@ -146,8 +146,6 @@ public class MyPojoToJsonCore {
     }
 
     static Object resolveType(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
-        String genericText = psiType.getPresentableText();
-
         processingInfo.checkOverflow();
 
         Object primitiveTypeDefaultValue = getDefaultValue(psiType);
@@ -187,7 +185,7 @@ public class MyPojoToJsonCore {
                     String typeName = retain.get(0);
                     return normalTypes.get(typeName);
                 } else {
-                    String result = listAllMyNonStaticFields(psiType, map, processingInfo);
+                    String result = listAllMyNonStaticFields(psiType, map, processingInfo); // 属性解析递归
 
                     // 补充Map和List信息
                     if (IGNORE_FOR_VALUE.equals(result)) {
@@ -259,9 +257,9 @@ public class MyPojoToJsonCore {
         }
     }
 
-    private static boolean isIgnoreForValue(@NotNull String qualifiedName) {
-        return qualifiedName.startsWith("java.") || qualifiedName.startsWith("javax.");
-    }
+//    private static boolean isIgnoreForValue(@NotNull String qualifiedName) {
+//        return qualifiedName.startsWith("java.") || qualifiedName.startsWith("javax.");
+//    }
 
     private static boolean isIgnoreForValue(@NotNull PsiClass psiClass) {
         // 泛型的类型的不能忽略
@@ -273,9 +271,9 @@ public class MyPojoToJsonCore {
             return true;
         }
 
-        if (isIgnoreForValue(qualifiedName)) {
-            return true;
-        }
+//        if (isIgnoreForValue(qualifiedName)) {
+//            return true;
+//        }
 
         return false;
     }
@@ -308,9 +306,7 @@ public class MyPojoToJsonCore {
         return false;
     }
 
-    private static PsiType processGenericType(PsiField psiField, PsiType classType) {
-        PsiType fieldType = psiField.getType();
-        PsiElement context = psiField.getContext();
+    private static PsiType getFieldRealType(PsiType fieldType, PsiType classType, PsiElement context) {
         if (fieldType instanceof PsiClassType && classType instanceof PsiClassType && context != null) {
             ClassResolveResult fieldClassResolveResult = ((PsiClassType) fieldType).resolveGenerics();
 
@@ -350,6 +346,25 @@ public class MyPojoToJsonCore {
         return fieldType;
     }
 
+    private static PsiType processGenericType(PsiField psiField, PsiType classType) {
+        PsiType fieldType = psiField.getType();
+        PsiElement context = psiField.getContext();
+
+        boolean isArray = false;
+        int arrayDim = 0;
+        while (fieldType instanceof PsiArrayType) {
+            isArray = true;
+            fieldType = ((PsiArrayType)fieldType).getComponentType();
+            arrayDim++;
+        }
+
+        PsiType realType = getFieldRealType(fieldType, classType, context);
+        if (isArray) {
+            realType = PsiTypesUtil.createArrayType(realType, arrayDim);
+        }
+        return realType;
+    }
+
     private static final String IGNORE_FOR_VALUE = "ignoreForValue";
 
     private static String listAllMyNonStaticFields(@NotNull PsiType psiType, Map<String, Object> map, ProcessingInfo processingInfo) {
@@ -386,9 +401,28 @@ public class MyPojoToJsonCore {
                 }
                 map.put(psiField.getName(), value);
             }
-            JvmReferenceType superClassType = psiClass.getSuperClassType();
+            // 模糊的
+            PsiClass superPsiClass = psiClass.getSuperClass();
+            PsiType superClassType = null;
+            // 尝试精细化查找
+            for (PsiType superType : psiType.getSuperTypes()) {
+                if (superType instanceof PsiClassType) {
+                    PsiClass genericTypePsiClass = PsiUtil.resolveClassInClassTypeOnly(superType);
+                    if (genericTypePsiClass != null && superPsiClass != null && Objects.requireNonNull(superPsiClass.getQualifiedName()).equals(genericTypePsiClass.getQualifiedName())) {
+                        superClassType = superType;
+                        break;
+                    }
+                }
+            }
+            if (superClassType == null) {
+                JvmReferenceType rawSuperClassType = psiClass.getSuperClassType();
+                if (rawSuperClassType instanceof PsiType) {
+                    superClassType = (PsiType) rawSuperClassType;
+                }
+            }
+
             if (superClassType instanceof PsiClassType) {
-                return listAllMyNonStaticFields((PsiClassType) superClassType, map, processingInfo);
+                return listAllMyNonStaticFields(superClassType, map, processingInfo); // 父类递归
             }
             return null;
         } finally {

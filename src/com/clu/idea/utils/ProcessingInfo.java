@@ -51,7 +51,7 @@ public class ProcessingInfo {
 
     public boolean isListingFields(PsiType psiType) {
         // 保留1次递归信息
-        return getCount(this.listingFieldsTypes, psiType) > 1;
+        return getCount(this.listingFieldsTypes, psiType) > 0;
     }
 
     public void checkOverflow() {
