@@ -352,14 +352,15 @@ public class MyPojoToJsonCore {
 
         boolean isArray = false;
         int arrayDim = 0;
-        while (fieldType instanceof PsiArrayType) {
+        PsiType psiType = fieldType;
+        while (psiType instanceof PsiArrayType) {
             isArray = true;
-            fieldType = ((PsiArrayType)fieldType).getComponentType();
+            psiType = ((PsiArrayType)psiType).getComponentType();
             arrayDim++;
         }
 
-        PsiType realType = getFieldRealType(fieldType, classType, context);
-        if (isArray) {
+        PsiType realType = getFieldRealType(psiType, classType, context);
+        if (isArray && realType != null) {
             realType = PsiTypesUtil.createArrayType(realType, arrayDim);
         }
         return realType;
