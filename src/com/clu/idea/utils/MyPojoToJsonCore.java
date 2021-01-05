@@ -185,97 +185,73 @@ public class MyPojoToJsonCore {
                     String typeName = retain.get(0);
                     return normalTypes.get(typeName);
                 } else {
-                    String result = listAllMyNonStaticFields(psiType, map, processingInfo); // 属性解析递归
+                    // java.lang.Iterable
+                    PsiClassType iterableType = PsiType.getTypeByName(CommonClassNames.JAVA_LANG_ITERABLE, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
+                    if (iterableType.isAssignableFrom(psiType)) {
+                        List<Object> list = new ArrayList<>();
+                        PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
+                        if (deepType != null) {
+                            list.add(resolveType(deepType, processingInfo));
+                        }
+                        return list;
+                    }
 
-                    // 补充Map和List信息
-                    if (IGNORE_FOR_VALUE.equals(result)) {
-                        // 检测是否是Map
-                        PsiClassType mapType = PsiType.getTypeByName(CommonClassNames.JAVA_UTIL_MAP, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
-                        if (mapType.isAssignableFrom(psiType)) {
-                            // java.util.Map
-                            PsiClass mapClass = mapType.resolve();
-                            processAllTypes(psiType, new Processor<PsiType>() {
-                                @Override
-                                public boolean process(PsiType psiType) {
-                                    ClassResolveResult classResolveResult = PsiUtil.resolveGenericsClassInType(psiType);
-                                    if (Objects.requireNonNull(mapClass).equals(classResolveResult.getElement())) {
-                                        Object key = null;
-                                        Object value = null;
-                                        for (Map.Entry<PsiTypeParameter, PsiType> entry : classResolveResult.getSubstitutor().getSubstitutionMap().entrySet()) {
-                                            PsiType realType = entry.getValue();
-                                            String name = entry.getKey().getName();
-                                            if ("K".equals(name)) {
-                                                if (realType == null) {
-                                                    key = "(rawType)";
-                                                } else {
-                                                    // key不能使用类型的默认值，使用类型值
-                                                    key = "{"+ realType.getPresentableText() +"}";
-                                                }
-                                            } else if ("V".equals(name)) {
-                                                if (realType == null) {
-                                                    value = "(rawType)";
-                                                } else {
-                                                    value = resolveType(realType, processingInfo);
-                                                }
+                    // java.util.Map
+                    PsiClassType mapType = PsiType.getTypeByName(CommonClassNames.JAVA_UTIL_MAP, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
+                    if (mapType.isAssignableFrom(psiType)) {
+                        // java.util.Map
+                        PsiClass mapClass = mapType.resolve();
+                        processAllTypes(psiType, new Processor<PsiType>() {
+                            @Override
+                            public boolean process(PsiType psiType) {
+                                ClassResolveResult classResolveResult = PsiUtil.resolveGenericsClassInType(psiType);
+                                if (Objects.requireNonNull(mapClass).equals(classResolveResult.getElement())) {
+                                    Object key = null;
+                                    Object value = null;
+                                    PsiType keyRealType = null;
+                                    for (Map.Entry<PsiTypeParameter, PsiType> entry : classResolveResult.getSubstitutor().getSubstitutionMap().entrySet()) {
+                                        PsiType realType = entry.getValue();
+                                        String name = entry.getKey().getName();
+                                        if ("K".equals(name)) {
+                                            if (realType == null) {
+                                                key = "(rawType)";
+                                            } else {
+                                                // key不能使用类型的默认值，使用类型值
+                                                key = "{" + realType.getPresentableText() + "}";
+                                                keyRealType = realType;
+                                            }
+                                        } else if ("V".equals(name)) {
+                                            if (realType == null) {
+                                                value = "(rawType)";
+                                            } else {
+                                                value = resolveType(realType, processingInfo);
                                             }
                                         }
-                                        if (key != null) {
-                                            map.put(String.valueOf(key), value);
-                                        }
-                                        return false;
                                     }
-                                    return true;
+                                    if (key != null) {
+                                        map.put(String.valueOf(key), value);
+                                        if (keyRealType != null) {
+                                            Object resolvedKey = resolveType(keyRealType, processingInfo);
+                                            if (resolvedKey instanceof Map && !((Map) resolvedKey).isEmpty()) {
+                                                // 使用额外的属性记录key的数据结构
+                                                map.put("__key__", resolvedKey);
+                                            }
+                                        }
+                                    }
+                                    return false;
                                 }
-                            });
-                        }
-
-                        // 普通bean实现了List接口，自己的属性+List<T>
-                        PsiClassType iterableType = PsiType.getTypeByName(CommonClassNames.JAVA_LANG_ITERABLE, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
-                        if (iterableType.isAssignableFrom(psiType)) {
-                            // java.lang.Iterable
-                            List<Object> list = new ArrayList<>();
-                            PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
-                            if (deepType != null) {
-                                list.add(resolveType(deepType, processingInfo));
+                                return true;
                             }
-                            // 使用list代替map(bean没有自己的属性)
-                            if (map.isEmpty()) {
-                                return list;
-                            } else {
-                                map.put("__list", list);
-                            }
-                        }
+                        });
                         return map;
                     }
 
-                    if (result != null) {
-                        return result;
-                    }
-                    return map;
+                    // result可能是防止递归的字符串
+                    String result = listAllMyNonStaticFields(psiType, map, processingInfo); // 属性解析递归
+                    return Optional.<Object>ofNullable(result/*递归文字*/).orElse(map);
                 }
             }
         }
-    }
-
-//    private static boolean isIgnoreForValue(@NotNull String qualifiedName) {
-//        return qualifiedName.startsWith("java.") || qualifiedName.startsWith("javax.");
-//    }
-
-    private static boolean isIgnoreForValue(@NotNull PsiClass psiClass) {
-        // 泛型的类型的不能忽略
-        if (psiClass instanceof PsiTypeParameter) {
-            return false;
-        }
-        String qualifiedName = psiClass.getQualifiedName();
-        if (qualifiedName == null) {
-            return true;
-        }
-
-//        if (isIgnoreForValue(qualifiedName)) {
-//            return true;
-//        }
-
-        return false;
     }
 
     private static boolean isIgnoreForKey(PsiField psiField) {
@@ -355,7 +331,7 @@ public class MyPojoToJsonCore {
         PsiType psiType = fieldType;
         while (psiType instanceof PsiArrayType) {
             isArray = true;
-            psiType = ((PsiArrayType)psiType).getComponentType();
+            psiType = ((PsiArrayType) psiType).getComponentType();
             arrayDim++;
         }
 
@@ -365,8 +341,6 @@ public class MyPojoToJsonCore {
         }
         return realType;
     }
-
-    private static final String IGNORE_FOR_VALUE = "ignoreForValue";
 
     private static String listAllMyNonStaticFields(@NotNull PsiType psiType, Map<String, Object> map, ProcessingInfo processingInfo) {
         String className = getClassName(psiType);
@@ -386,9 +360,7 @@ public class MyPojoToJsonCore {
             if (psiClass == null) {
                 return null;
             }
-            if (isIgnoreForValue(psiClass)) {
-                return IGNORE_FOR_VALUE;
-            }
+
             for (PsiField psiField : psiClass.getFields()) {
                 if (isIgnoreForKey(psiField)) {
                     continue;
