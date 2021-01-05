@@ -70,6 +70,16 @@ public class MyPojoToJsonCore {
             }
         }
 
+        PsiClass psiClass = null;
+
+        PsiQualifiedReferenceElement psiQualifiedReferenceElement = PsiTreeUtil.getContextOfType(psiElement, PsiQualifiedReferenceElement.class);
+        if (psiQualifiedReferenceElement != null) {
+            PsiElement psiJavaElement = psiQualifiedReferenceElement.resolve();
+            if (psiJavaElement instanceof PsiClass) {
+                psiClass = (PsiClass) psiJavaElement;
+            }
+        }
+
         // new
         PsiNewExpression selectedNewExpression = PsiTreeUtil.getContextOfType(psiElement, PsiNewExpression.class);
         if (selectedNewExpression != null) {
@@ -80,11 +90,12 @@ public class MyPojoToJsonCore {
         }
 
         // 构造方法
-        PsiClass psiClass = null;
-        PsiMethod selectedMethod = PsiTreeUtil.getContextOfType(psiElement, PsiMethod.class);
-        if (selectedMethod != null) {
-            if (selectedMethod.isConstructor()) {
-                psiClass = selectedMethod.getContainingClass();
+        if (psiClass == null) {
+            PsiMethod selectedMethod = PsiTreeUtil.getContextOfType(psiElement, PsiMethod.class);
+            if (selectedMethod != null) {
+                if (selectedMethod.isConstructor()) {
+                    psiClass = selectedMethod.getContainingClass();
+                }
             }
         }
 
@@ -146,7 +157,8 @@ public class MyPojoToJsonCore {
     }
 
     static Object resolveType(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
-        processingInfo.checkOverflow();
+        processingInfo.checkOverflowAndCanceled();
+        processingInfo.updateProgress(psiType);
 
         Object primitiveTypeDefaultValue = getDefaultValue(psiType);
         if (primitiveTypeDefaultValue != null) {
@@ -343,6 +355,7 @@ public class MyPojoToJsonCore {
     }
 
     private static String listAllMyNonStaticFields(@NotNull PsiType psiType, Map<String, Object> map, ProcessingInfo processingInfo) {
+        processingInfo.updateProgress(psiType);
         String className = getClassName(psiType);
         // 要放在try/finally外面
         if (processingInfo.isListingFields(psiType)) {
@@ -350,7 +363,7 @@ public class MyPojoToJsonCore {
             return "Recursion(" + className + ")...";
         }
 
-        processingInfo.checkOverflow();
+        processingInfo.checkOverflowAndCanceled();
 
         try {
             processingInfo.increase();

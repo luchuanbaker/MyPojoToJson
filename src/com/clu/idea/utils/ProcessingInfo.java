@@ -1,6 +1,8 @@
 package com.clu.idea.utils;
 
 import com.clu.idea.MyPluginException;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiType;
@@ -14,6 +16,8 @@ public class ProcessingInfo {
     private int level;
 
     private Project project;
+
+    private ProgressIndicator progressIndicator;
 
     private Stack<Object> listingFieldsTypes = new Stack<>();
 
@@ -31,6 +35,15 @@ public class ProcessingInfo {
 
     public ProcessingInfo setProject(Project project) {
         this.project = project;
+        return this;
+    }
+
+    public ProgressIndicator getProgressIndicator() {
+        return progressIndicator;
+    }
+
+    public ProcessingInfo setProgressIndicator(ProgressIndicator progressIndicator) {
+        this.progressIndicator = progressIndicator;
         return this;
     }
 
@@ -64,9 +77,16 @@ public class ProcessingInfo {
         return getCount(this.listingFieldsTypes, removeGenericInfo(psiType)) > 0;
     }
 
-    public void checkOverflow() {
+    public void checkOverflowAndCanceled() throws ProcessCanceledException {
         if (level > 50) {
             throw new MyPluginException(new MyPluginException("This class reference level exceeds maximum limit or has nested references!"));
         }
+        this.progressIndicator.checkCanceled();
     }
+
+    public void updateProgress(PsiType psiType) {
+        this.progressIndicator.setFraction(Math.min(0.9, this.progressIndicator.getFraction() + 0.1));
+        this.progressIndicator.setText("Process class: " + psiType.getPresentableText());
+    }
+
 }
