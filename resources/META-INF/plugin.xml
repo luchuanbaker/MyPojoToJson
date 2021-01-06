@@ -2,11 +2,11 @@
     <id>com.clu.idea.utils</id>
     <name>My Pojo To Json</name>
     <version>1.0</version>
-    <vendor email="luchuanbaker@qq.com" url="https://github.com/luchuanbaker">luchuanbaker</vendor>
+    <vendor email="luchuanbaker@qq.com" url="https://github.com/luchuanbaker/MyPojoToJson">luchuanbaker</vendor>
     <description><![CDATA[
         <p>A simple plugin for converting Java bean to Json</p>
         <p>support generic types</p>
-        <p>git: https://github.com/luchuanbaker/MyPojoToJson</p>
+        <p>github: https://github.com/luchuanbaker/MyPojoToJson/</p>
     ]]>
     </description>
 
@@ -26,6 +26,8 @@
     <extensions defaultExtensionNs="com.intellij">
         <!-- Add your extensions here -->
     </extensions>
+
+    <depends>com.intellij.modules.lang</depends>
 
     <actions>
         <!-- Add your actions here -->

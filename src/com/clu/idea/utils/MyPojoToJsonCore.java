@@ -74,7 +74,7 @@ public class MyPojoToJsonCore {
         normalTypeNameValues.put("java.nio.file.Path", "{Path}");
     }
 
-    static Object getNormalTypeValue(PsiType psiType, Project project) {
+    private static Object getNormalTypeValue(PsiType psiType, Project project) {
         if (!(psiType instanceof PsiClassType)) {
             return null;
         }
@@ -312,12 +312,10 @@ public class MyPojoToJsonCore {
                         return map;
                     }
 
-//                    // java.io.File
-//                    PsiClassType fileType = PsiType.getTypeByName(CommonClassNames.JAVA_IO_FILE, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
-//                    if (fileType.isAssignableFrom(psiType)) {
-//                        // return "{File}";
-//                        System.out.println("123");
-//                    }
+                    // interface
+                    if (psiClass.isInterface()) {
+                        return "{}";
+                    }
 
                     // result可能是防止递归的字符串
                     String result = listAllMyNonStaticFields(psiType, map, processingInfo); // 属性解析递归
@@ -517,11 +515,6 @@ public class MyPojoToJsonCore {
         Object normalTypeValue = getNormalTypeValue(psiType, project);
         if (normalTypeValue != null) {
             return normalTypeValue;
-        }
-        // 检测是否psiType是interface
-        PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
-        if (psiClass != null && psiClass.isInterface()) {
-            return "{}";
         }
         return null;
     }
