@@ -1,12 +1,18 @@
 package com.clu.idea.utils;
 
+import com.clu.idea.MyPluginException;
 import com.google.common.io.LineReader;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import com.intellij.lang.jvm.types.JvmReferenceType;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.PsiClassType.ClassResolveResult;
+import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiTypesUtil;
@@ -23,28 +29,73 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 public class MyPojoToJsonCore {
 
     @NonNls
-    private static final Map<String, Object> normalTypes = new HashMap<>();
+    private static final ConcurrentMap<String, Object> normalTypeNameValues = new ConcurrentHashMap<>();
+
+    /**
+     * 特殊类型带默认值
+     */
+    @NonNls
+    private static final ConcurrentMap<String, PsiClassType> normalTypeOfName = new ConcurrentHashMap<>();
+
+    private static final String JAVA_DOC_KEY = "----JAVA_DOC----";
+
+    public static final Gson GSON = (new GsonBuilder()).serializeNulls().setPrettyPrinting().create();
 
     private static final BigDecimal zero = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
 
     static {
-        LocalDateTime now = LocalDateTime.now();
-        String dateTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        normalTypes.put("Boolean", false);
-        normalTypes.put("Float", zero);
-        normalTypes.put("Double", zero);
-        normalTypes.put("BigDecimal", zero);
-        normalTypes.put("Number", 0);
-        normalTypes.put("CharSequence", "");
-        normalTypes.put("Date", dateTime);
-        normalTypes.put("Temporal", now.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
-        normalTypes.put("LocalDateTime", dateTime);
-        normalTypes.put("LocalDate", now.toLocalDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
-        normalTypes.put("LocalTime", now.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+        Supplier<LocalDateTime> now = LocalDateTime::now;
+        Supplier<String> dateTime = () -> now.get().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        normalTypeNameValues.put(CommonClassNames.JAVA_LANG_BOOLEAN, false);
+        normalTypeNameValues.put(CommonClassNames.JAVA_LANG_FLOAT, zero);
+        normalTypeNameValues.put(CommonClassNames.JAVA_LANG_DOUBLE, zero);
+        normalTypeNameValues.put("java.math.BigDecimal", zero);
+        normalTypeNameValues.put(CommonClassNames.JAVA_LANG_NUMBER, 0);
+        normalTypeNameValues.put("java.lang.CharSequence", "");
+        normalTypeNameValues.put(CommonClassNames.JAVA_UTIL_DATE, dateTime);
+        normalTypeNameValues.put("java.time.temporal.Temporal", (Supplier<Long>) () -> now.get().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+        normalTypeNameValues.put("java.time.LocalDateTime", dateTime);
+        normalTypeNameValues.put("java.time.LocalDate", (Supplier<String>) () -> now.get().toLocalDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
+        normalTypeNameValues.put("java.time.LocalTime", (Supplier<String>) () -> now.get().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+        normalTypeNameValues.put(CommonClassNames.JAVA_IO_FILE, "{File}");
+        normalTypeNameValues.put("java.net.SocketAddress", "{SocketAddress}");
+        normalTypeNameValues.put("java.net.InetAddress", "{InetAddress}");
+        normalTypeNameValues.put("java.util.TimeZone", "{TimeZone}");
+        normalTypeNameValues.put("java.util.concurrent.atomic.AtomicBoolean", false);
+        normalTypeNameValues.put(CommonClassNames.JAVA_LANG_CLASS, "{Class}");
+        normalTypeNameValues.put("java.nio.file.Path", "{Path}");
+    }
+
+    static Object getNormalTypeValue(PsiType psiType, Project project) {
+        if (!(psiType instanceof PsiClassType)) {
+            return null;
+        }
+
+        for (Map.Entry<String, Object> entry : normalTypeNameValues.entrySet()) {
+            String typeClassName = entry.getKey();
+            PsiClassType psiClassType = normalTypeOfName.computeIfAbsent(typeClassName, new Function<String, PsiClassType>() {
+                @Override
+                public PsiClassType apply(String className) {
+                    return PsiType.getTypeByName(className, project, GlobalSearchScope.allScope(project));
+                }
+            });
+            if (psiClassType.isAssignableFrom(psiType)) {
+                Object value = entry.getValue();
+                if (value instanceof Supplier) {
+                    return ((Supplier) value).get();
+                }
+                return value;
+            }
+        }
+        return null;
     }
 
     static PsiClassType checkAndGetPsiType(DataContext dataContext) {
@@ -125,22 +176,12 @@ public class MyPojoToJsonCore {
         return null;
     }
 
+    @NotNull
     static String getClassName(PsiType psiType) {
         PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
-        if (psiClass != null) {
-            return psiClass.getName();
-        }
-        return psiType.getPresentableText();
-    }
-
-    private static void getAllTypeNames(PsiType psiType, Set<String> psiTypeNames) {
-        processAllTypes(psiType, new Processor<PsiType>() {
-            @Override
-            public boolean process(PsiType psiType) {
-                psiTypeNames.add(psiType.getPresentableText());
-                return true;
-            }
-        });
+        return Optional.ofNullable(psiClass)
+            .map(PsiClass::getName)
+            .orElse(psiType.getPresentableText());
     }
 
     private static void processAllTypes(PsiType psiType, Processor<PsiType> processor) {
@@ -156,46 +197,59 @@ public class MyPojoToJsonCore {
         }
     }
 
-    static Object resolveType(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
+    static String pojoToJson(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
+        Object result = resolveType(psiType, processingInfo); // 入口
+        String json = GSON.toJson(result);
+        try {
+            json = MyPojoToJsonCore.myFormat(json);
+        } catch (IOException ex) {
+            throw new MyPluginException("Error", ex);
+        }
+        return json;
+    }
+
+    private static Object resolveType(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
+        String className = getClassName(psiType);
+        // 要放在try/finally外面
+        if (processingInfo.isProcessingType(psiType)) {
+            // 防止递归依赖
+            return "Recursion(" + className + ")...";
+        }
+
+        processingInfo.updateProgress(psiType); // resolveType
         processingInfo.checkOverflowAndCanceled();
-        processingInfo.updateProgress(psiType);
 
-        Object primitiveTypeDefaultValue = getDefaultValue(psiType);
-        if (primitiveTypeDefaultValue != null) {
-            return primitiveTypeDefaultValue;
-        }
+        try {
+            processingInfo.increase();
+            processingInfo.startProcessType(psiType);
 
-        PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
+            Object primitiveTypeDefaultValue = getDefaultValue(psiType, processingInfo.getProject());
+            if (primitiveTypeDefaultValue != null) {
+                return primitiveTypeDefaultValue;
+            }
 
-        if (psiClass != null && CommonClassNames.JAVA_LANG_OBJECT.equals(psiClass.getQualifiedName())) {
-            return Collections.emptyMap();
-        }
+            PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
 
-        if (psiType instanceof PsiArrayType) {
-            List<Object> list = new ArrayList<>();
-            PsiType deepType = psiType.getDeepComponentType();
-            list.add(resolveType(deepType, processingInfo));
-            return list;
-        } else {
-            Map<String, Object> map = new LinkedHashMap<>();
-            if (psiClass == null) {
-                return map;
-            } else if (psiClass.isEnum()) {
-                for (PsiField field : psiClass.getFields()) {
-                    if (field instanceof PsiEnumConstant) {
-                        return field.getName();
-                    }
-                }
-                return "";
+            if (psiClass != null && CommonClassNames.JAVA_LANG_OBJECT.equals(psiClass.getQualifiedName())) {
+                return Collections.emptyMap();
+            }
+
+            if (psiType instanceof PsiArrayType) {
+                List<Object> list = new ArrayList<>();
+                PsiType deepType = psiType.getDeepComponentType();
+                list.add(resolveType(deepType, processingInfo)); // PsiArrayType
+                return list;
             } else {
-                Set<String> fieldTypeNames = new LinkedHashSet<>();
-                getAllTypeNames(psiType, fieldTypeNames);
-                List<String> retain = new ArrayList<>(fieldTypeNames);
-                /*取交集，常见类型的默认值*/
-                retain.retainAll(normalTypes.keySet());
-                if (!retain.isEmpty()) {
-                    String typeName = retain.get(0);
-                    return normalTypes.get(typeName);
+                Map<String, Object> map = new LinkedHashMap<>();
+                if (psiClass == null) {
+                    return map;
+                } else if (psiClass.isEnum()) {
+                    for (PsiField field : psiClass.getFields()) {
+                        if (field instanceof PsiEnumConstant) {
+                            return field.getName();
+                        }
+                    }
+                    return "";
                 } else {
                     // java.lang.Iterable
                     PsiClassType iterableType = PsiType.getTypeByName(CommonClassNames.JAVA_LANG_ITERABLE, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
@@ -203,7 +257,7 @@ public class MyPojoToJsonCore {
                         List<Object> list = new ArrayList<>();
                         PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
                         if (deepType != null) {
-                            list.add(resolveType(deepType, processingInfo));
+                            list.add(resolveType(deepType, processingInfo)); // iterableType
                         }
                         return list;
                     }
@@ -236,14 +290,14 @@ public class MyPojoToJsonCore {
                                             if (realType == null) {
                                                 value = "(rawType)";
                                             } else {
-                                                value = resolveType(realType, processingInfo);
+                                                value = resolveType(realType, processingInfo); // V of Map
                                             }
                                         }
                                     }
                                     if (key != null) {
                                         map.put(String.valueOf(key), value);
                                         if (keyRealType != null) {
-                                            Object resolvedKey = resolveType(keyRealType, processingInfo);
+                                            Object resolvedKey = resolveType(keyRealType, processingInfo); // __key__ of Map
                                             if (resolvedKey instanceof Map && !((Map) resolvedKey).isEmpty()) {
                                                 // 使用额外的属性记录key的数据结构
                                                 map.put("__key__", resolvedKey);
@@ -258,17 +312,27 @@ public class MyPojoToJsonCore {
                         return map;
                     }
 
+//                    // java.io.File
+//                    PsiClassType fileType = PsiType.getTypeByName(CommonClassNames.JAVA_IO_FILE, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
+//                    if (fileType.isAssignableFrom(psiType)) {
+//                        // return "{File}";
+//                        System.out.println("123");
+//                    }
+
                     // result可能是防止递归的字符串
                     String result = listAllMyNonStaticFields(psiType, map, processingInfo); // 属性解析递归
                     return Optional.<Object>ofNullable(result/*递归文字*/).orElse(map);
                 }
             }
+        } finally {
+            processingInfo.decrease();
+            processingInfo.finishProcessType();
         }
     }
 
     private static boolean isIgnoreForKey(PsiField psiField) {
         PsiModifierList modifierList = psiField.getModifierList();
-        if (modifierList != null && modifierList.hasExplicitModifier(PsiModifier.STATIC)) {
+        if (modifierList != null && (modifierList.hasExplicitModifier(PsiModifier.STATIC) || modifierList.hasExplicitModifier(PsiModifier.TRANSIENT))) {
             return true;
         }
         return false;
@@ -354,83 +418,110 @@ public class MyPojoToJsonCore {
         return realType;
     }
 
-    private static String listAllMyNonStaticFields(@NotNull PsiType psiType, Map<String, Object> map, ProcessingInfo processingInfo) {
-        processingInfo.updateProgress(psiType);
-        String className = getClassName(psiType);
-        // 要放在try/finally外面
-        if (processingInfo.isListingFields(psiType)) {
-            // 防止递归依赖
-            return "Recursion(" + className + ")...";
+    private static String getJavadoc(PsiField psiField) {
+        PsiDocComment psiDocComment = PsiTreeUtil.getChildOfType(psiField, PsiDocComment.class);
+        if (psiDocComment != null) {
+            String text = psiDocComment.getText();
+            if (text == null) {
+                return null;
+            }
+            text = text.trim();
+            if (text.isEmpty()) {
+                return null;
+            }
+            return text;
         }
+        return null;
+    }
+
+    private static String listAllMyNonStaticFields(@NotNull PsiType psiType, Map<String, Object> map, ProcessingInfo processingInfo) {
+        String className = getClassName(psiType);
+
+        processingInfo.updateProgress(psiType); // listAllMyNonStaticFields
 
         processingInfo.checkOverflowAndCanceled();
 
-        try {
-            processingInfo.increase();
-            processingInfo.startListFields(psiType);
 
-            PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
-            if (psiClass == null) {
-                return null;
-            }
-
-            for (PsiField psiField : psiClass.getFields()) {
-                if (isIgnoreForKey(psiField)) {
-                    continue;
-                }
-                PsiType finalType = processGenericType(psiField, psiType);
-                Object value;
-                if (finalType == null) {
-                    value = "null(rawType)(" + className + ":" + psiField.getType().getPresentableText() + ")";
-                } else {
-                    value = resolveType(finalType, processingInfo);
-                }
-                map.put(psiField.getName(), value);
-            }
-            // 模糊的
-            PsiClass superPsiClass = psiClass.getSuperClass();
-            PsiType superClassType = null;
-            // 尝试精细化查找
-            for (PsiType superType : psiType.getSuperTypes()) {
-                if (superType instanceof PsiClassType) {
-                    PsiClass genericTypePsiClass = PsiUtil.resolveClassInClassTypeOnly(superType);
-                    if (genericTypePsiClass != null && superPsiClass != null && Objects.requireNonNull(superPsiClass.getQualifiedName()).equals(genericTypePsiClass.getQualifiedName())) {
-                        superClassType = superType;
-                        break;
-                    }
-                }
-            }
-            if (superClassType == null) {
-                JvmReferenceType rawSuperClassType = psiClass.getSuperClassType();
-                if (rawSuperClassType instanceof PsiType) {
-                    superClassType = (PsiType) rawSuperClassType;
-                }
-            }
-
-            if (superClassType instanceof PsiClassType) {
-                return listAllMyNonStaticFields(superClassType, map, processingInfo); // 父类递归
-            }
+        PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
+        if (psiClass == null) {
             return null;
-        } finally {
-            processingInfo.decrease();
-            processingInfo.finishListFields();
         }
+
+        for (PsiField psiField : psiClass.getFields()) {
+            if (isIgnoreForKey(psiField)) {
+                continue;
+            }
+            PsiType finalType = processGenericType(psiField, psiType);
+            Object value;
+            if (finalType == null) {
+                value = "null(rawType)(" + className + ":" + psiField.getType().getPresentableText() + ")";
+            } else {
+                value = resolveType(finalType, processingInfo); // listAllMyNonStaticFields
+            }
+            String javadoc = getJavadoc(psiField);
+            String fieldName = psiField.getName();
+            if (javadoc != null) {
+                map.put(JAVA_DOC_KEY + "-" + fieldName, javadoc);
+            }
+            map.put(fieldName, value);
+        }
+
+        // 模糊的
+        PsiClass superPsiClass = psiClass.getSuperClass();
+        PsiType superClassType = null;
+        // 尝试精细化查找(getSuperClass()方法会丢失泛型信息，getSuperTypes()会保留)
+        for (PsiType superType : psiType.getSuperTypes()) {
+            if (superType instanceof PsiClassType) {
+                PsiClass genericTypePsiClass = PsiUtil.resolveClassInClassTypeOnly(superType);
+                if (genericTypePsiClass != null && superPsiClass != null && Objects.requireNonNull(superPsiClass.getQualifiedName()).equals(genericTypePsiClass.getQualifiedName())) {
+                    superClassType = superType;
+                    break;
+                }
+            }
+        }
+        if (superClassType == null) {
+            JvmReferenceType rawSuperClassType = psiClass.getSuperClassType();
+            if (rawSuperClassType instanceof PsiType) {
+                superClassType = (PsiType) rawSuperClassType;
+            }
+        }
+
+        if (superClassType instanceof PsiClassType) {
+            return listAllMyNonStaticFields(superClassType, map, processingInfo); // 父类递归
+        }
+        return null;
     }
 
-    private static Object getDefaultValue(PsiType psiType) {
+    private static Object getDefaultValue(PsiType psiType, Project project) {
+        // 基本类型
         if (psiType instanceof PsiPrimitiveType) {
-            return getDefaultValue(psiType.getCanonicalText());
+            return getPrimitiveTypeDefaultValue(psiType.getCanonicalText());
         }
+        // 包装类型
         if (psiType instanceof PsiClassType) {
             PsiClass psiClass = ((PsiClassType) psiType).resolve();
 
             if (psiClass != null) {
                 String qualifiedName = psiClass.getQualifiedName();
+                // 包装类的包名前缀
                 String prefix = "java.lang.";
                 if (qualifiedName != null && qualifiedName.startsWith(prefix)) {
-                    return getDefaultValue(qualifiedName.substring(prefix.length()));
+                    Object value = getPrimitiveTypeDefaultValue(qualifiedName.substring(prefix.length()));
+                    if (value != null) {
+                        return value;
+                    }
                 }
             }
+        }
+        // 特殊类型
+        Object normalTypeValue = getNormalTypeValue(psiType, project);
+        if (normalTypeValue != null) {
+            return normalTypeValue;
+        }
+        // 检测是否psiType是interface
+        PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
+        if (psiClass != null && psiClass.isInterface()) {
+            return "{}";
         }
         return null;
     }
@@ -440,7 +531,7 @@ public class MyPojoToJsonCore {
      * @param typeName
      * @return
      */
-    private static Object getDefaultValue(@NotNull String typeName) {
+    private static Object getPrimitiveTypeDefaultValue(@NotNull String typeName) {
         typeName = typeName.toLowerCase();
         switch (typeName) {
             case "boolean":
@@ -465,11 +556,52 @@ public class MyPojoToJsonCore {
         }
     }
 
+    @NotNull
+    private static String formatJavadoc(@NotNull String javadoc) {
+        javadoc = javadoc.substring("/**".length());
+        javadoc = javadoc.substring(0, javadoc.length() - "*/".length());
+        LineReader lineReader = new LineReader(new StringReader(javadoc));
+        StringBuilder builder = new StringBuilder();
+        String line;
+        try {
+            while ((line = lineReader.readLine()) != null) {
+                line = line.trim();
+                if (line.startsWith("*")) {
+                    line = line.substring(1).trim();
+                }
+                builder.append(line);
+            }
+        } catch (IOException e) {
+            throw new MyPluginException("get javadoc fail", e);
+        }
+        return builder.toString();
+    }
+
     static String myFormat(String json) throws IOException {
         StringBuilder builder = new StringBuilder();
         LineReader lineReader = new LineReader(new StringReader(json));
-        String line = null;
-        while ((line = lineReader.readLine()) != null) {
+        String line = lineReader.readLine();
+        do {
+            String trimLine = line.trim();
+            String javadoc = null;
+            if (trimLine.startsWith("\""+ JAVA_DOC_KEY)) {
+                if (trimLine.endsWith(",")) {
+                    trimLine = trimLine.substring(0, trimLine.length() - 1);
+                }
+                Map<String, String> javadocMap = GSON.fromJson("{" + trimLine + "}", new TypeToken<Map<String, String>>() {
+                }.getType());
+                String _javadoc;
+                Iterator<String> iterator;
+                if ((iterator = javadocMap.values().iterator()).hasNext() && (_javadoc = iterator.next()) != null) {
+                    javadoc = formatJavadoc(_javadoc);
+                }
+                line = lineReader.readLine();
+                if (line == null) {
+                    // javadoc居然是最后一行，丢弃javadoc
+                    break;
+                }
+            }
+
             StringBuilder spaceBuilder = new StringBuilder();
             for (char c : line.toCharArray()) {
                 if (c == ' ') {
@@ -481,8 +613,18 @@ public class MyPojoToJsonCore {
             if (spaceBuilder.length() > 0) {
                 builder.append(spaceBuilder);
             }
-            builder.append(line).append(System.lineSeparator());
-        }
+            builder.append(line);
+
+            if (javadoc != null) {
+                builder.append("  // ").append(javadoc);
+            }
+
+            // 换行符
+            line = lineReader.readLine();
+            if (line != null) {
+                builder.append(System.lineSeparator());
+            }
+        } while (line != null);
         return builder.toString();
     }
 

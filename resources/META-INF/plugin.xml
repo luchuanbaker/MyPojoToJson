@@ -32,6 +32,7 @@
         <action class="com.clu.idea.utils.MyPojoToJsonAction" id="com.clu.idea.utils.MyPojoToJsonAction"
                 text="MyPojoToJson" description="">
             <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="alt X"/>
         </action>
     </actions>
 

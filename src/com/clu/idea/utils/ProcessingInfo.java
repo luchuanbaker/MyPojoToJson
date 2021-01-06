@@ -19,7 +19,7 @@ public class ProcessingInfo {
 
     private ProgressIndicator progressIndicator;
 
-    private Stack<Object> listingFieldsTypes = new Stack<>();
+    private Stack<Object> processingTypes = new Stack<>();
 
     public int increase() {
         return ++level;
@@ -47,10 +47,10 @@ public class ProcessingInfo {
         return this;
     }
 
-    public void startListFields(PsiType psiType) {
+    public void startProcessType(PsiType psiType) {
         // 去除泛型信息，递归校验认为：泛型信息不一样，但是类一样，也算是递归
         Object stackItem = removeGenericInfo(psiType);
-        this.listingFieldsTypes.push(stackItem);
+        this.processingTypes.push(stackItem);
     }
 
     private Object removeGenericInfo(PsiType psiType) {
@@ -58,8 +58,8 @@ public class ProcessingInfo {
         return Optional.<Object>ofNullable(psiClass).orElse(psiType);
     }
 
-    public void finishListFields() {
-        this.listingFieldsTypes.pop();
+    public void finishProcessType() {
+        this.processingTypes.pop();
     }
 
     private int getCount(Stack<Object> stack, Object psiType) {
@@ -72,9 +72,8 @@ public class ProcessingInfo {
         return count;
     }
 
-    public boolean isListingFields(PsiType psiType) {
-        // 保留1次递归信息
-        return getCount(this.listingFieldsTypes, removeGenericInfo(psiType)) > 0;
+    public boolean isProcessingType(PsiType psiType) {
+        return getCount(this.processingTypes, removeGenericInfo(psiType)) > 0;
     }
 
     public void checkOverflowAndCanceled() throws ProcessCanceledException {

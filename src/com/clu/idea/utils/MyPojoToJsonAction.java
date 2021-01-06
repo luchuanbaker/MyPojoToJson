@@ -1,8 +1,5 @@
 package com.clu.idea.utils;
 
-import com.clu.idea.MyPluginException;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationDisplayType;
 import com.intellij.notification.NotificationGroup;
@@ -25,12 +22,8 @@ import org.jetbrains.annotations.NotNull;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
-import java.io.IOException;
 
 public class MyPojoToJsonAction extends AnAction {
-
-    // private static final GsonBuilder gsonBuilder = (new GsonBuilder()).setPrettyPrinting();
-    private static final Gson GSON = (new GsonBuilder()).serializeNulls().setPrettyPrinting().create();
 
     private static final NotificationGroup notifyGroup = new NotificationGroup("myPojoToJson.NotificationGroup", NotificationDisplayType.BALLOON, true);
 
@@ -64,18 +57,13 @@ public class MyPojoToJsonAction extends AnAction {
                 indicator.setFraction(0.1);
                 indicator.setText("90% to finish");
                 try {
-                    Object result = ApplicationManager.getApplication().runReadAction(new Computable<Object>() {
+                    String json = ApplicationManager.getApplication().runReadAction(new Computable<String>() {
                         @Override
-                        public Object compute() {
-                            return MyPojoToJsonCore.resolveType(psiType, new ProcessingInfo().setProject(project).setProgressIndicator(indicator));
+                        public String compute() {
+                            return MyPojoToJsonCore.pojoToJson(psiType, new ProcessingInfo().setProject(project).setProgressIndicator(indicator));
                         }
                     });
-                    String json = GSON.toJson(result);
-                    try {
-                        json = MyPojoToJsonCore.myFormat(json);
-                    } catch (IOException ex) {
-                        throw new MyPluginException("Error", ex);
-                    }
+
                     StringSelection selection = new StringSelection(json);
                     Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
                     clipboard.setContents(selection, selection);
