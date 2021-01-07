@@ -1,5 +1,5 @@
 <idea-plugin>
-    <id>com.clu.idea.utils</id>
+    <id>com.clu.idea.utils.MyPojoToJson</id>
     <name>My Pojo To Json</name>
     <version>1.0</version>
     <vendor email="luchuanbaker@qq.com" url="https://github.com/luchuanbaker">luchuanbaker</vendor>
