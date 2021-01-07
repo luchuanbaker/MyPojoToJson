@@ -3,10 +3,22 @@
     <name>My Pojo To Json</name>
     <version>1.0</version>
     <vendor email="luchuanbaker@qq.com" url="https://github.com/luchuanbaker">luchuanbaker</vendor>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
+    <depends>com.intellij.modules.java</depends>
+
     <description><![CDATA[
         <p>A simple plugin for converting Java bean to Json</p>
-        <p>support generic types</p>
-        <p>github: https://github.com/luchuanbaker/MyPojoToJson/</p>
+        usages:
+        <ol>
+            <li>Open any java code file in idea.</li>
+            <li>Right click the class name or java type to open the context menu.</li>
+            <li>Click the `MyPojoToJson` item in the context menu.</li>
+            <li>The json string relative to the java bean will be copied to your system clipboard automatically.</li>
+            <li>tips: You can use the hot key instead, default is alt + X.</li>
+        </ol>
+        <p><a href="https://github.com/luchuanbaker/MyPojoToJson/">github: https://github.com/luchuanbaker/MyPojoToJson/</a></p>
     ]]>
     </description>
 
@@ -26,8 +38,6 @@
     <extensions defaultExtensionNs="com.intellij">
         <!-- Add your extensions here -->
     </extensions>
-
-    <depends>com.intellij.modules.lang</depends>
 
     <actions>
         <!-- Add your actions here -->
