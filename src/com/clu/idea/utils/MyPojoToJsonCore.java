@@ -12,6 +12,7 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.PsiClassType.ClassResolveResult;
+import com.intellij.psi.impl.compiled.ClsClassImpl;
 import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -439,10 +440,17 @@ public class MyPojoToJsonCore {
 
         processingInfo.checkOverflowAndCanceled();
 
-
         PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(psiType);
         if (psiClass == null) {
             return null;
+        }
+
+        // add support for Android Application
+        if (psiClass instanceof ClsClassImpl) {
+            PsiClass sourceMirrorClass = ((ClsClassImpl) psiClass).getSourceMirrorClass();
+            if (sourceMirrorClass != null) {
+                psiClass = sourceMirrorClass;
+            }
         }
 
         for (PsiField psiField : psiClass.getFields()) {

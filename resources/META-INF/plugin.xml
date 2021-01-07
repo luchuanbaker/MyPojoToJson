@@ -2,7 +2,7 @@
     <id>com.clu.idea.utils</id>
     <name>My Pojo To Json</name>
     <version>1.0</version>
-    <vendor email="luchuanbaker@qq.com" url="https://github.com/luchuanbaker/MyPojoToJson">luchuanbaker</vendor>
+    <vendor email="luchuanbaker@qq.com" url="https://github.com/luchuanbaker">luchuanbaker</vendor>
     <description><![CDATA[
         <p>A simple plugin for converting Java bean to Json</p>
         <p>support generic types</p>
