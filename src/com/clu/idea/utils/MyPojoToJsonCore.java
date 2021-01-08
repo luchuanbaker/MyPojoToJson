@@ -35,6 +35,9 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import static com.clu.idea.utils.ProcessingInfo.CheckProcessingType.MAX_DEPTH;
+import static com.clu.idea.utils.ProcessingInfo.CheckProcessingType.PROCESSING;
+
 public class MyPojoToJsonCore {
 
     @NonNls
@@ -73,6 +76,8 @@ public class MyPojoToJsonCore {
         normalTypeNameValues.put("java.util.concurrent.atomic.AtomicBoolean", false);
         normalTypeNameValues.put(CommonClassNames.JAVA_LANG_CLASS, "{Class}");
         normalTypeNameValues.put("java.nio.file.Path", "{Path}");
+        normalTypeNameValues.put("java.lang.Thread", "{Thread}");
+        normalTypeNameValues.put(CommonClassNames.JAVA_LANG_THROWABLE, "{Throwable}");
     }
 
     private static Object getNormalTypeValue(PsiType psiType, Project project) {
@@ -198,23 +203,17 @@ public class MyPojoToJsonCore {
         }
     }
 
-    static String pojoToJson(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
-        Object result = resolveType(psiType, processingInfo); // 入口
-        String json = GSON.toJson(result);
-        try {
-            json = MyPojoToJsonCore.myFormat(json);
-        } catch (IOException ex) {
-            throw new MyPluginException("Error", ex);
-        }
-        return json;
-    }
-
-    private static Object resolveType(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
+    static Object resolveType(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
         String className = getClassName(psiType);
         // 要放在try/finally外面
-        if (processingInfo.isProcessingType(psiType)) {
+        ProcessingInfo.CheckProcessingType checkProcessingType = processingInfo.checkProcessingType(psiType);
+        if (checkProcessingType == PROCESSING) {
             // 防止递归依赖
             return "Recursion(" + className + ")...";
+        }
+        if (checkProcessingType == MAX_DEPTH) {
+            // 防止过深
+            return "MaxDepth(" + className + ")...";
         }
 
         processingInfo.updateProgress(psiType); // resolveType
@@ -237,11 +236,13 @@ public class MyPojoToJsonCore {
 
             if (psiType instanceof PsiArrayType) {
                 List<Object> list = new ArrayList<>();
+                processingInfo.setResultIfAbsent(list);
                 PsiType deepType = psiType.getDeepComponentType();
                 list.add(resolveType(deepType, processingInfo)); // PsiArrayType
                 return list;
             } else {
                 Map<String, Object> map = new LinkedHashMap<>();
+                processingInfo.setResultIfAbsent(map);
                 if (psiClass == null) {
                     return map;
                 } else if (psiClass.isEnum()) {
@@ -256,6 +257,7 @@ public class MyPojoToJsonCore {
                     PsiClassType iterableType = PsiType.getTypeByName(CommonClassNames.JAVA_LANG_ITERABLE, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
                     if (iterableType.isAssignableFrom(psiType)) {
                         List<Object> list = new ArrayList<>();
+                        processingInfo.setResultIfAbsent(list);
                         PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
                         if (deepType != null) {
                             list.add(resolveType(deepType, processingInfo)); // iterableType
@@ -475,16 +477,19 @@ public class MyPojoToJsonCore {
         // 模糊的
         PsiClass superPsiClass = psiClass.getSuperClass();
         PsiType superClassType = null;
-        // 尝试精细化查找(getSuperClass()方法会丢失泛型信息，getSuperTypes()会保留)
-        for (PsiType superType : psiType.getSuperTypes()) {
-            if (superType instanceof PsiClassType) {
-                PsiClass genericTypePsiClass = PsiUtil.resolveClassInClassTypeOnly(superType);
-                if (genericTypePsiClass != null && superPsiClass != null && Objects.requireNonNull(superPsiClass.getQualifiedName()).equals(genericTypePsiClass.getQualifiedName())) {
-                    superClassType = superType;
-                    break;
+        if (superPsiClass != null) {
+            // 尝试精细化查找(getSuperClass()方法会丢失泛型信息，getSuperTypes()会保留)
+            for (PsiType superType : psiType.getSuperTypes()) {
+                if (superType instanceof PsiClassType) {
+                    PsiClass genericTypePsiClass = PsiUtil.resolveClassInClassTypeOnly(superType);
+                    if (genericTypePsiClass != null && Objects.requireNonNull(superPsiClass.getQualifiedName()).equals(genericTypePsiClass.getQualifiedName())) {
+                        superClassType = superType;
+                        break;
+                    }
                 }
             }
         }
+
         if (superClassType == null) {
             JvmReferenceType rawSuperClassType = psiClass.getSuperClassType();
             if (rawSuperClassType instanceof PsiType) {

@@ -1,5 +1,6 @@
 package com.clu.idea.utils;
 
+import com.clu.idea.MyPluginException;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationDisplayType;
 import com.intellij.notification.NotificationGroup;
@@ -14,7 +15,6 @@ import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.psi.PsiClassType;
 import com.intellij.psi.PsiType;
 import org.jetbrains.annotations.NotNull;
@@ -22,6 +22,9 @@ import org.jetbrains.annotations.NotNull;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
+import java.io.IOException;
+
+import static com.clu.idea.utils.MyPojoToJsonCore.GSON;
 
 public class MyPojoToJsonAction extends AnAction {
 
@@ -56,25 +59,37 @@ public class MyPojoToJsonAction extends AnAction {
                 // 10% done
                 indicator.setFraction(0.1);
                 indicator.setText("90% to finish");
+                ProcessingInfo processingInfo = new ProcessingInfo().setProject(project).setProgressIndicator(indicator);
                 try {
-                    String json = ApplicationManager.getApplication().runReadAction(new Computable<String>() {
+                    ApplicationManager.getApplication().runReadAction(new Runnable() {
                         @Override
-                        public String compute() {
-                            return MyPojoToJsonCore.pojoToJson(psiType, new ProcessingInfo().setProject(project).setProgressIndicator(indicator));
+                        public void run() {
+                            MyPojoToJsonCore.resolveType(psiType, processingInfo);
                         }
                     });
-
-                    StringSelection selection = new StringSelection(json);
-                    Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-                    clipboard.setContents(selection, selection);
                 } catch (ProcessCanceledException e) {
-                    return;
+                    // ignore
                 } finally {
                     // Finished
                     indicator.setFraction(1.0);
                     indicator.setText("finished");
                     indicator.cancel();
                 }
+
+                Object result = processingInfo.getResult();
+                if (result == null) {
+                    return;
+                }
+
+                String json = GSON.toJson(result);
+                try {
+                    json = MyPojoToJsonCore.myFormat(json);
+                } catch (IOException ex) {
+                    throw new MyPluginException("Error", ex);
+                }
+                StringSelection selection = new StringSelection(json);
+                Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+                clipboard.setContents(selection, selection);
 
                 String message = "Convert " + className + " to JSON success, copied to clipboard.";
                 Notification success = notifyGroup.createNotification(message, NotificationType.INFORMATION);
