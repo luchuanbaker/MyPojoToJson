@@ -5,7 +5,6 @@ import com.google.common.io.LineReader;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
-import com.intellij.lang.jvm.types.JvmReferenceType;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.editor.Editor;
@@ -399,6 +398,13 @@ public class MyPojoToJsonCore {
         return fieldType;
     }
 
+    private static PsiType createArrayType(PsiType newType, int arrayDim) {
+        for(int i = 0; i < arrayDim; i++){
+            newType = newType.createArrayType();
+        }
+        return newType;
+    }
+
     private static PsiType processGenericType(PsiField psiField, PsiType classType) {
         PsiType fieldType = psiField.getType();
         PsiElement context = psiField.getContext();
@@ -414,7 +420,7 @@ public class MyPojoToJsonCore {
 
         PsiType realType = getFieldRealType(psiType, classType, context);
         if (isArray && realType != null) {
-            realType = PsiTypesUtil.createArrayType(realType, arrayDim);
+            realType = createArrayType(realType, arrayDim);
         }
         return realType;
     }
@@ -491,7 +497,8 @@ public class MyPojoToJsonCore {
         }
 
         if (superClassType == null) {
-            JvmReferenceType rawSuperClassType = psiClass.getSuperClassType();
+            /*JvmReferenceType*/ // uses experimental API, which may be changed in future releases leading to binary and source code incompatibilities
+            Object rawSuperClassType = psiClass.getSuperClassType();
             if (rawSuperClassType instanceof PsiType) {
                 superClassType = (PsiType) rawSuperClassType;
             }

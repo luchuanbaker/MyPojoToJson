@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.clu.idea.utils.MyPojoToJson</id>
     <name>My Pojo To Json</name>
-    <version>1.0</version>
+    <version>1.0.1</version>
     <vendor email="luchuanbaker@qq.com" url="https://github.com/luchuanbaker">luchuanbaker</vendor>
 
     <depends>com.intellij.modules.platform</depends>
@@ -23,12 +23,13 @@
     </description>
 
     <change-notes><![CDATA[
+        <li>1.0.1 - Fix compatibility issues.</li>
         <li>1.0.0 - First revision.</li>
     ]]>
     </change-notes>
 
     <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/build_number_ranges.html for description -->
-    <idea-version since-build="173.0"/>
+    <idea-version since-build="173.0" until-build="203.*"/>
 
     <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
          on how to target different products -->
