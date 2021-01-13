@@ -235,12 +235,14 @@ public class MyPojoToJsonCore {
 
             if (psiType instanceof PsiArrayType) {
                 List<Object> list = new ArrayList<>();
+                // 复杂类型支持返回非完整的转换
                 processingInfo.setResultIfAbsent(list);
                 PsiType deepType = psiType.getDeepComponentType();
                 list.add(resolveType(deepType, processingInfo)); // PsiArrayType
                 return list;
             } else {
                 Map<String, Object> map = new LinkedHashMap<>();
+                // 复杂类型支持返回非完整的转换
                 processingInfo.setResultIfAbsent(map);
                 if (psiClass == null) {
                     return map;
@@ -256,6 +258,7 @@ public class MyPojoToJsonCore {
                     PsiClassType iterableType = PsiType.getTypeByName(CommonClassNames.JAVA_LANG_ITERABLE, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
                     if (iterableType.isAssignableFrom(psiType)) {
                         List<Object> list = new ArrayList<>();
+                        // 复杂类型支持返回非完整的转换
                         processingInfo.setResultIfAbsent(list);
                         PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
                         if (deepType != null) {

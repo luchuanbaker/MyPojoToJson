@@ -64,7 +64,9 @@ public class MyPojoToJsonAction extends AnAction {
                     ApplicationManager.getApplication().runReadAction(new Runnable() {
                         @Override
                         public void run() {
-                            MyPojoToJsonCore.resolveType(psiType, processingInfo);
+                            Object result = MyPojoToJsonCore.resolveType(psiType, processingInfo);
+                            // fix simpleType not support
+                            processingInfo.setResultIfAbsent(result);
                         }
                     });
                 } catch (ProcessCanceledException e) {

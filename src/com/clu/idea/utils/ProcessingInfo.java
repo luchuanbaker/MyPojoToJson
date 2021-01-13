@@ -64,7 +64,7 @@ public class ProcessingInfo {
 
     public void updateProgress(PsiType psiType) {
         this.progressIndicator.setFraction(Math.min(0.9, this.progressIndicator.getFraction() + 0.1));
-        this.progressIndicator.setText("Process class: " + psiType.getPresentableText());
+        this.progressIndicator.setText("Processing: " + psiType.getPresentableText());
     }
 
     // getters and setters
