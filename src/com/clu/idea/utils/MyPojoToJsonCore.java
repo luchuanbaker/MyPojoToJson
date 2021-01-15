@@ -31,7 +31,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static com.clu.idea.utils.ProcessingInfo.CheckProcessingType.MAX_DEPTH;
@@ -41,12 +40,6 @@ public class MyPojoToJsonCore {
 
     @NonNls
     private static final ConcurrentMap<String, Object> normalTypeNameValues = new ConcurrentHashMap<>();
-
-    /**
-     * 特殊类型带默认值
-     */
-    @NonNls
-    private static final ConcurrentMap<String, PsiClassType> normalTypeOfName = new ConcurrentHashMap<>();
 
     private static final String JAVA_DOC_KEY = "----JAVA_DOC----";
 
@@ -85,13 +78,7 @@ public class MyPojoToJsonCore {
         }
 
         for (Map.Entry<String, Object> entry : normalTypeNameValues.entrySet()) {
-            String typeClassName = entry.getKey();
-            PsiClassType psiClassType = normalTypeOfName.computeIfAbsent(typeClassName, new Function<String, PsiClassType>() {
-                @Override
-                public PsiClassType apply(String className) {
-                    return PsiType.getTypeByName(className, project, GlobalSearchScope.allScope(project));
-                }
-            });
+            PsiClassType psiClassType = PsiType.getTypeByName(entry.getKey(), project, GlobalSearchScope.allScope(project));
             if (psiClassType.isAssignableFrom(psiType)) {
                 Object value = entry.getValue();
                 if (value instanceof Supplier) {

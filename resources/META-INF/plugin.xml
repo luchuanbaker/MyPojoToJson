@@ -18,7 +18,12 @@
             <li>The json string relative to the java bean will be copied to your system clipboard automatically.</li>
             <li>tips: You can use the hot key instead, default is alt + X.</li>
         </ol>
-        <p><a href="https://github.com/luchuanbaker/MyPojoToJson/">github: https://github.com/luchuanbaker/MyPojoToJson/</a></p>
+        <p>
+            feedback: <a href="https://plugins.jetbrains.com/plugin/15766-my-pojo-to-json">https://plugins.jetbrains.com/plugin/15766-my-pojo-to-json</a>
+        </p>
+        <p>
+            github: <a href="https://github.com/luchuanbaker/MyPojoToJson/">https://github.com/luchuanbaker/MyPojoToJson/</a>
+        </p>
     ]]>
     </description>
 
