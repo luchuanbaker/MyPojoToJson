@@ -65,8 +65,8 @@ public class MyPojoToJsonAction extends AnAction {
                         @Override
                         public void run() {
                             Object result = MyPojoToJsonCore.resolveType(psiType, processingInfo);
-                            // fix simpleType not support
-                            processingInfo.setResultIfAbsent(result);
+                            // use return value instead of partial result
+                            processingInfo.setResult(result);
                         }
                     });
                 } catch (ProcessCanceledException e) {

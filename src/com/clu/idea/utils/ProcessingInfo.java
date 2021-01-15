@@ -78,6 +78,11 @@ public class ProcessingInfo {
         return this;
     }
 
+    public ProcessingInfo setResult(Object result) {
+        this.result.set(result);
+        return this;
+    }
+
     public int increase() {
         return ++level;
     }

@@ -230,8 +230,8 @@ public class MyPojoToJsonCore {
             } else {
                 Map<String, Object> map = new LinkedHashMap<>();
                 // 复杂类型支持返回非完整的转换
-                processingInfo.setResultIfAbsent(map);
                 if (psiClass == null) {
+                    processingInfo.setResultIfAbsent(map);
                     return map;
                 } else if (psiClass.isEnum()) {
                     for (PsiField field : psiClass.getFields()) {
@@ -257,6 +257,7 @@ public class MyPojoToJsonCore {
                     // java.util.Map
                     PsiClassType mapType = PsiType.getTypeByName(CommonClassNames.JAVA_UTIL_MAP, processingInfo.getProject(), GlobalSearchScope.allScope(processingInfo.getProject()));
                     if (mapType.isAssignableFrom(psiType)) {
+                        processingInfo.setResultIfAbsent(map);
                         // java.util.Map
                         PsiClass mapClass = mapType.resolve();
                         processAllTypes(psiType, new Processor<PsiType>() {
@@ -310,6 +311,7 @@ public class MyPojoToJsonCore {
                     }
 
                     // result可能是防止递归的字符串
+                    processingInfo.setResultIfAbsent(map);
                     String result = listAllMyNonStaticFields(psiType, map, processingInfo); // 属性解析递归
                     return Optional.<Object>ofNullable(result/*递归文字*/).orElse(map);
                 }
