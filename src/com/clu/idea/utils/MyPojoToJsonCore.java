@@ -18,6 +18,8 @@ import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.Processor;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
@@ -465,7 +467,7 @@ public class MyPojoToJsonCore {
                 value = resolveType(finalType, processingInfo); // listAllMyNonStaticFields
             }
             String javadoc = getJavadoc(psiField);
-            String fieldName = psiField.getName();
+            String fieldName = getAnnotationPreferredFieldName(psiField);
             if (javadoc != null) {
                 map.put(JAVA_DOC_KEY + "-" + fieldName, javadoc);
             }
@@ -500,6 +502,30 @@ public class MyPojoToJsonCore {
             return listAllMyNonStaticFields(superClassType, map, processingInfo); // 父类递归
         }
         return null;
+    }
+
+    private static String getAnnotationPreferredFieldName(PsiField psiField) {
+        PsiAnnotation[] annotations = psiField.getAnnotations();
+        if (!ArrayUtils.isEmpty(annotations)) {
+            for (PsiAnnotation annotation : annotations) {
+                String qualifiedName = annotation.getQualifiedName();
+                if ("com.fasterxml.jackson.annotation.JsonProperty".equalsIgnoreCase(qualifiedName)) {
+                    PsiAnnotationParameterList parameterList = annotation.getParameterList();
+                    for (PsiNameValuePair psiNameValuePair : parameterList.getAttributes()) {
+                        PsiAnnotationMemberValue value = psiNameValuePair.getValue();
+                        if (StringUtils.isBlank(psiNameValuePair.getName()) && value != null) {
+                            if (value instanceof PsiLiteralExpression) {
+                                PsiLiteralExpression expression = (PsiLiteralExpression) value;
+                                if (expression.getValue() instanceof String) {
+                                    return expression.getValue().toString();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return psiField.getName();
     }
 
     private static Object getDefaultValue(PsiType psiType, Project project) {

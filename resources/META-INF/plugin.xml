@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.clu.idea.utils.MyPojoToJson</id>
     <name>My Pojo To Json</name>
-    <version>1.0.4</version>
+    <version>1.0.7</version>
     <vendor email="luchuanbaker@qq.com" url="https://github.com/luchuanbaker">luchuanbaker</vendor>
 
     <depends>com.intellij.modules.platform</depends>
@@ -28,6 +28,9 @@
     </description>
 
     <change-notes><![CDATA[
+        <li>1.0.7 - add jackson annotation 'JsonProperty' support.</li>
+	    <li>1.0.6 - Remove idea-version until-build restriction.</li>
+		<li>1.0.5 - add compatibility to idea 2022.2</li>
         <li>1.0.4 - add compatibility to idea 2022.1</li>
         <li>1.0.2 - Fix bugs(psi element cache not valid, List<T> convert invalid json and etc.).</li>
         <li>1.0.1 - Fix compatibility issues.</li>
@@ -36,7 +39,7 @@
     </change-notes>
 
     <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/build_number_ranges.html for description -->
-    <idea-version since-build="173.0" until-build="221.*"/>
+    <idea-version since-build="173.0"/>
 
     <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
          on how to target different products -->

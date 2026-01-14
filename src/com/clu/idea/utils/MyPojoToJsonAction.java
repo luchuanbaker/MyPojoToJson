@@ -28,6 +28,7 @@ import static com.clu.idea.utils.MyPojoToJsonCore.GSON;
 
 public class MyPojoToJsonAction extends AnAction {
 
+    // 要过期了，后续改为使用NotificationGroupManager.getInstance().getNotificationGroup("xxx")
     private static final NotificationGroup notifyGroup = new NotificationGroup("myPojoToJson.NotificationGroup", NotificationDisplayType.BALLOON, true);
 
     @Override
