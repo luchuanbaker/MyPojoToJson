@@ -1,7 +1,6 @@
 package com.clu.idea.utils;
 
 import com.clu.idea.MyPluginException;
-import com.google.common.io.LineReader;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -11,7 +10,6 @@ import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.PsiClassType.ClassResolveResult;
-import com.intellij.psi.impl.compiled.ClsClassImpl;
 import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -23,6 +21,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
 import java.math.BigDecimal;
@@ -191,6 +190,39 @@ public class MyPojoToJsonCore {
         }
     }
 
+    private static PsiType unwrapCollectionElementType(PsiType psiType) {
+        if (psiType instanceof PsiWildcardType) {
+            PsiType extendsBound = ((PsiWildcardType) psiType).getExtendsBound();
+            if (extendsBound != null) {
+                return extendsBound;
+            }
+            PsiType superBound = ((PsiWildcardType) psiType).getSuperBound();
+            if (superBound != null) {
+                return superBound;
+            }
+            return null;
+        }
+        return psiType;
+    }
+
+    private static PsiType extractIterableElementType(@NotNull PsiType psiType) {
+        PsiType deepType = unwrapCollectionElementType(PsiUtil.extractIterableTypeParameter(psiType, false));
+        if (deepType != null) {
+            return deepType;
+        }
+
+        if (psiType instanceof PsiClassType) {
+            ClassResolveResult classResolveResult = ((PsiClassType) psiType).resolveGenerics();
+            for (PsiType candidate : classResolveResult.getSubstitutor().getSubstitutionMap().values()) {
+                PsiType unwrapped = unwrapCollectionElementType(candidate);
+                if (unwrapped != null) {
+                    return unwrapped;
+                }
+            }
+        }
+        return null;
+    }
+
     static Object resolveType(@NotNull PsiType psiType, @NotNull ProcessingInfo processingInfo) {
         String className = getClassName(psiType);
         // 要放在try/finally外面
@@ -249,9 +281,11 @@ public class MyPojoToJsonCore {
                         List<Object> list = new ArrayList<>();
                         // 复杂类型支持返回非完整的转换
                         processingInfo.setResultIfAbsent(list);
-                        PsiType deepType = PsiUtil.extractIterableTypeParameter(psiType, false);
+                        PsiType deepType = extractIterableElementType(psiType);
                         if (deepType != null) {
                             list.add(resolveType(deepType, processingInfo)); // iterableType
+                        } else {
+                            list.add("(rawType)");
                         }
                         return list;
                     }
@@ -447,11 +481,11 @@ public class MyPojoToJsonCore {
             return null;
         }
 
-        // add support for Android Application
-        if (psiClass instanceof ClsClassImpl) {
-            PsiClass sourceMirrorClass = ((ClsClassImpl) psiClass).getSourceMirrorClass();
-            if (sourceMirrorClass != null) {
-                psiClass = sourceMirrorClass;
+        // add support for compiled classes (e.g. Android framework classes)
+        if (psiClass instanceof PsiCompiledElement) {
+            PsiElement mirror = ((PsiCompiledElement) psiClass).getMirror();
+            if (mirror instanceof PsiClass) {
+                psiClass = (PsiClass) mirror;
             }
         }
 
@@ -591,7 +625,7 @@ public class MyPojoToJsonCore {
     private static String formatJavadoc(@NotNull String javadoc) {
         javadoc = javadoc.substring("/**".length());
         javadoc = javadoc.substring(0, javadoc.length() - "*/".length());
-        LineReader lineReader = new LineReader(new StringReader(javadoc));
+        BufferedReader lineReader = new BufferedReader(new StringReader(javadoc));
         StringBuilder builder = new StringBuilder();
         String line;
         try {
@@ -610,7 +644,7 @@ public class MyPojoToJsonCore {
 
     static String myFormat(String json) throws IOException {
         StringBuilder builder = new StringBuilder();
-        LineReader lineReader = new LineReader(new StringReader(json));
+        BufferedReader lineReader = new BufferedReader(new StringReader(json));
         String line = lineReader.readLine();
         do {
             String trimLine = line.trim();
